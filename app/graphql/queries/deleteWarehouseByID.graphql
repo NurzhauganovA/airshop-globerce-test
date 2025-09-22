@@ -1,0 +1,18 @@
+mutation deleteWarehouseByID(
+    $warehouseId: ID!
+) {
+    deleteWarehouse(id: $warehouseId) {
+        warehouseErrors {
+            field
+            message
+            code
+            shippingZones
+        }
+        errors {
+            field
+            message
+            code
+            shippingZones
+        }
+    }
+}

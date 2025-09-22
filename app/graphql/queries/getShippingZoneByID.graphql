@@ -1,0 +1,67 @@
+query getShippingZoneInfoByID($szID: ID!) {
+    shippingZone(id: $szID) {
+        id
+        privateMetafields
+        metafields
+        name
+        default
+        description
+        shippingMethods {
+            id
+            privateMetafields
+            metafields
+            name
+            description
+            type
+            maximumDeliveryDays
+            minimumDeliveryDays
+            maximumOrderPrice {
+                currency
+                amount
+            }
+            minimumOrderPrice {
+                currency
+                amount
+            }
+            channelListings {
+                id
+                channel {
+                    id
+                    name
+                }
+                maximumOrderPrice {
+                    currency
+                    amount
+                }
+                minimumOrderPrice {
+                    currency
+                    amount
+                }
+                price {
+                    currency
+                    amount
+                }
+            }
+        }
+        warehouses {
+            id
+            privateMetafields
+            metafields
+            name
+            slug
+            email
+            isPrivate
+            companyName
+            clickAndCollectOption
+            externalReference
+        }
+        channels {
+            id
+            slug
+            name
+            isActive
+            currencyCode
+            hasOrders
+        }
+    }
+}

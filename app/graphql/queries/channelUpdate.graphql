@@ -1,0 +1,24 @@
+mutation updateChannel (
+    $channelId: ID!,
+    $channelUpdateInput: ChannelUpdateInput!
+) {
+    channelUpdate(id: $channelId, input: $channelUpdateInput) {
+        channelErrors {
+            field
+            message
+            code
+            shippingZones
+            warehouses
+        }
+        errors {
+            field
+            message
+            code
+            shippingZones
+            warehouses
+        }
+        channel {
+            id
+        }
+    }
+}

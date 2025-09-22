@@ -1,0 +1,39 @@
+mutation CreateProductForMerchant(
+    $category: ID,
+    $name: String,
+    $product_type: ID!,
+    $merchantId: String!
+) {
+    productCreate(
+        input: {
+            category: $category,
+            name: $name,
+            productType: $product_type,
+            metadata: [{ key: "merchant_id", value: $merchantId }],
+        }
+    ) {
+        productErrors {
+            field
+            message
+            code
+            attributes
+            values
+        }
+        errors {
+            field
+            message
+            code
+            attributes
+            values
+        }
+        product {
+            id
+            name
+            slug
+            metadata {
+                value
+                key
+            }
+        }
+    }
+}

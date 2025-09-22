@@ -1,0 +1,121 @@
+query getCustomerCheckoutsByID($customer_id: String!) {
+    checkouts(
+        last: 30
+        filter: { metadata: { key: "customer_id", value: $customer_id } }
+    ) {
+        totalCount
+        edges {
+            cursor
+            node {
+                id
+                created
+                updatedAt
+                lastChange
+                customerNote
+                note
+                discountName
+                translatedDiscountName
+                email
+                isShippingRequired
+                quantity
+                stockReservationExpires
+                taxExemption
+                token
+                languageCode
+                displayGrossPrices
+                authorizeStatus
+                chargeStatus
+                channel {
+                    id
+                    slug
+                    name
+                    isActive
+                    currencyCode
+                    hasOrders
+                }
+                lines {
+                    id
+                    quantity
+                    requiresShipping
+                    isGift
+                    variant {
+                        id
+                        name
+                        sku
+                        margin
+                        quantityOrdered
+                        quantityAvailable
+                        created
+                        updatedAt
+                        externalReference
+                        channelListings {
+                            id
+                            price {
+                                currency
+                                amount
+                            }
+                        }
+                        product {
+                            id
+                            seoTitle
+                            seoDescription
+                            name
+                            description
+                            slug
+                            created
+                            updatedAt
+                            chargeTaxes
+                            rating
+                            channel
+                            descriptionJson
+                            isAvailable
+                            availableForPurchase
+                            availableForPurchaseAt
+                            isAvailableForPurchase
+                            externalReference
+                        }
+                        weight {
+                            unit
+                            value
+                        }
+                        images {
+                            id
+                            alt
+                            sortOrder
+                            url
+                        }
+                        media {
+                            id
+                            sortOrder
+                            alt
+                            type
+                            oembedData
+                            url
+                            productId
+                        }
+                    }
+                }
+                subtotalPrice {
+                    currency
+                    gross {
+                        currency
+                        amount
+                    }
+                }
+                totalPrice {
+                    currency
+                    gross {
+                        currency
+                        amount
+                    }
+                }
+            }
+        }
+        pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+        }
+    }
+}

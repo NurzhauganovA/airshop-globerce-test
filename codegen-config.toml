@@ -1,0 +1,20 @@
+[tool.ariadne-codegen]
+strategy = "client"
+
+# Path to your downloaded schema file
+schema_path = "app/graphql/schema.graphql"
+
+# Path to GraphQL queries & mutations (can be a folder or a file)
+queries_path = "app/graphql/queries"
+
+# Package where generated code will be written
+target_package_name = "generated_client"
+target_package_path = "app/graphql"
+
+# Optional but recommended settings
+client_name = "SaleorClient"
+async_client = true
+include_comments = true
+include_all_enums = true
+include_all_inputs = true
+convert_to_snake_case = true

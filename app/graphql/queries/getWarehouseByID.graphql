@@ -1,0 +1,30 @@
+query getWarehouseByID($whID: ID!) {
+    warehouse(id: $whID) {
+        id
+        privateMetafields
+        metafields
+        name
+        slug
+        email
+        isPrivate
+        companyName
+        clickAndCollectOption
+        externalReference
+        address {
+            id
+            metafields
+            firstName
+            lastName
+            companyName
+            streetAddress1
+            streetAddress2
+            city
+            cityArea
+            postalCode
+            countryArea
+            phone
+            isDefaultShippingAddress
+            isDefaultBillingAddress
+        }
+    }
+}

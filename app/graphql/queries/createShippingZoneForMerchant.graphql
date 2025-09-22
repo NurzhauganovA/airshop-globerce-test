@@ -1,0 +1,28 @@
+mutation createShippingZoneForMerchant(
+    $createShippingZoneInput: ShippingZoneCreateInput!
+) {
+    shippingZoneCreate(input: $createShippingZoneInput) {
+        errors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        shippingErrors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        shippingZone {
+            id
+            privateMetafields
+            metafields
+            name
+            default
+            description
+        }
+    }
+}

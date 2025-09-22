@@ -1,0 +1,59 @@
+
+mutation createCheckoutFromAirlink (
+    $channelSlug: String,
+    $variantId: ID!,
+    $price: PositiveDecimal,
+    $email: String,
+    $customerId: String!
+    $airlinkId: String!
+) {
+    checkoutCreate(
+        input: {
+            channel: $channelSlug
+            lines: {
+                 quantity: 1, 
+                 variantId: $variantId, 
+                 price: $price
+                 }
+            email: $email
+            shippingAddress: {
+                skipValidation: true
+                country: KZ
+                city: "Airlink"
+                streetAddress1: "Airlink"
+            }
+            billingAddress: {
+                country: KZ
+                skipValidation: true
+                city: "Airlink"
+                streetAddress1: "Airlink"
+            }
+            metadata: [
+                {key: "customer_id", value: $customerId},
+                {key: "airlinkId", value: $airlinkId}
+            ]
+        }
+    ) {
+        created
+        checkoutErrors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        checkout {
+            id
+        }
+        errors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+    }
+}
+

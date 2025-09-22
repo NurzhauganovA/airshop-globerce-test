@@ -1,0 +1,126 @@
+query getOrderByID($orderId: ID!) {
+    order(id: $orderId) {
+        created
+        updatedAt
+        status
+        trackingClientId
+        shippingMethodName
+        collectionPointName
+        actions
+        number
+        original
+        origin
+        isPaid
+        paymentStatus
+        paymentStatusDisplay
+        authorizeStatus
+        chargeStatus
+        taxExemption
+        shippingTaxClassName
+        token
+        voucherCode
+        customerNote
+        redirectUrl
+        statusDisplay
+        canFinalize
+        userEmail
+        isShippingRequired
+        languageCode
+        languageCodeEnum
+        discountName
+        translatedDiscountName
+        displayGrossPrices
+        externalReference
+        checkoutId
+        lines {
+            id
+            productName
+            variantName
+            productSku
+            productVariantId
+            isShippingRequired
+            quantity
+            quantityFulfilled
+            taxRate
+            unitDiscountReason
+            unitDiscountValue
+            unitDiscountType
+            isPriceOverridden
+            translatedProductName
+            translatedVariantName
+            saleId
+            quantityToFulfill
+            totalPrice {
+                currency
+                gross {
+                    currency
+                    amount
+                }
+            }
+        }
+        shippingPrice {
+            currency
+            gross {
+                currency
+                amount
+            }
+        }
+        total {
+            currency
+            gross {
+                currency
+                amount
+            }
+        }
+        channel {
+            id
+            slug
+            name
+            isActive
+            currencyCode
+            hasOrders
+        }
+        billingAddress {
+            id
+            firstName
+            lastName
+            companyName
+            streetAddress1
+            streetAddress2
+            city
+            cityArea
+            postalCode
+            countryArea
+            phone
+            isDefaultShippingAddress
+            isDefaultBillingAddress
+            country {
+                code
+                country
+            }
+        }
+        shippingAddress {
+            id
+            firstName
+            lastName
+            companyName
+            streetAddress1
+            streetAddress2
+            city
+            cityArea
+            postalCode
+            countryArea
+            phone
+            isDefaultShippingAddress
+            isDefaultBillingAddress
+            country {
+                code
+                country
+            }
+        }
+        metadata {
+            key
+            value
+        }
+    }
+}

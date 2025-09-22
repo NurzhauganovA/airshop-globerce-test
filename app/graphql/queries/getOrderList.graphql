@@ -1,0 +1,71 @@
+query getOrderList(
+    $sortBy: OrderSortingInput
+    $filter: OrderFilterInput
+    $before: String
+    $after: String
+    $first: Int
+    $last: Int
+) {
+    orders(
+        sortBy: $sortBy
+        filter: $filter
+        before: $before
+        after: $after
+        first: $first
+        last: $last
+    ) {
+        totalCount
+        pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+        }
+        edges {
+            cursor
+            node {
+                id
+                created
+                updatedAt
+                status
+                trackingClientId
+                shippingMethodName
+                collectionPointName
+                actions
+                number
+                original
+                origin
+                isPaid
+                paymentStatus
+                paymentStatusDisplay
+                authorizeStatus
+                chargeStatus
+                taxExemption
+                shippingTaxRate
+                shippingTaxClassName
+                token
+                redirectUrl
+                statusDisplay
+                canFinalize
+                userEmail
+                isShippingRequired
+                languageCode
+                languageCodeEnum
+                discountName
+                externalReference
+                checkoutId
+                total {
+                    currency
+                    gross {
+                        currency
+                        amount
+                    }
+                }
+                metadata {
+                    key
+                    value
+                }
+            }
+        }
+    }
+}

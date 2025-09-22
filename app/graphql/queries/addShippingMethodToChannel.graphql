@@ -1,0 +1,61 @@
+mutation addShippingMethodToChannel(
+    $shipMetId: ID!
+    $shippingMethodChannelsList: [ShippingMethodChannelListingAddInput!]!
+) {
+    shippingMethodChannelListingUpdate(
+        id: $shipMetId
+        input: { addChannels: $shippingMethodChannelsList }
+    ) {
+        shippingMethod {
+            id
+            privateMetafields
+            metafields
+            name
+            description
+            type
+            maximumDeliveryDays
+            minimumDeliveryDays
+            maximumOrderPrice {
+                currency
+                amount
+            }
+            minimumOrderPrice {
+                currency
+                amount
+            }
+            channelListings {
+                id
+                channel {
+                    id
+                    name
+                }
+                maximumOrderPrice {
+                    currency
+                    amount
+                }
+                minimumOrderPrice {
+                    currency
+                    amount
+                }
+                price {
+                    currency
+                    amount
+                }
+            }
+        }
+        shippingErrors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        errors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+    }
+}

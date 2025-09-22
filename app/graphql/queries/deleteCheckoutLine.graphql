@@ -1,0 +1,52 @@
+mutation deleteCheckoutLine (
+    $checkoutId: ID!
+    $lineId: ID!
+) {
+    checkoutLineDelete(id: $checkoutId, lineId: $lineId) {
+        checkout {
+            id
+            created
+            updatedAt
+            lastChange
+            email
+            isShippingRequired
+            quantity
+            stockReservationExpires
+            taxExemption
+            token
+            languageCode
+            displayGrossPrices
+            authorizeStatus
+            chargeStatus
+            lines {
+                id
+                quantity
+                requiresShipping
+                isGift
+                totalPrice {
+                    currency
+                    gross {
+                        currency
+                        amount
+                    }
+                }
+            }
+        }
+        checkoutErrors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        errors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+    }
+}

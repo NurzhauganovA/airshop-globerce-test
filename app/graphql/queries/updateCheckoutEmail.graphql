@@ -1,0 +1,41 @@
+mutation updateCheckoutEmail($email: String! $checkoutId: ID!) {
+    checkoutEmailUpdate(email: $email, id: $checkoutId) {
+        checkoutErrors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        errors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        checkout {
+            id
+            created
+            updatedAt
+            lastChange
+            customerNote
+            note
+            discountName
+            translatedDiscountName
+            voucherCode
+            email
+            isShippingRequired
+            quantity
+            stockReservationExpires
+            taxExemption
+            token
+            languageCode
+            displayGrossPrices
+            authorizeStatus
+            chargeStatus
+        }
+    }
+}

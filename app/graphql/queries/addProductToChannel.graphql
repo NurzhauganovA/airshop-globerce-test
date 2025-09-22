@@ -1,0 +1,53 @@
+mutation addProductToChannel (
+    $productId: ID!
+    $chanelId: ID!
+) {
+    productChannelListingUpdate(
+        id: $productId
+        input: {
+            updateChannels: {
+                channelId: $chanelId
+                isPublished: true
+                isAvailableForPurchase: true
+            }
+        }
+    ) {
+        product {
+            id
+            seoTitle
+            seoDescription
+            name
+            description
+            slug
+            created
+            updatedAt
+            chargeTaxes
+            rating
+            channel
+            descriptionJson
+            isAvailable
+            availableForPurchase
+            availableForPurchaseAt
+            isAvailableForPurchase
+            externalReference
+        }
+        errors {
+            field
+            message
+            code
+            attributes
+            values
+            channels
+            variants
+        }
+        productChannelListingErrors {
+            field
+            message
+            code
+            attributes
+            values
+            channels
+            variants
+        }
+    }
+}

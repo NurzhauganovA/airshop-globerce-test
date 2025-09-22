@@ -1,0 +1,115 @@
+query getWarehouseWithStocks(
+    $whID: ID!
+    $before: String
+    $after: String
+    $first: Int
+    $last: Int
+) {
+    warehouse(id: $whID) {
+        id
+        privateMetafields
+        metafields
+        name
+        slug
+        email
+        isPrivate
+        companyName
+        clickAndCollectOption
+        externalReference
+        address {
+            id
+            metafields
+            firstName
+            lastName
+            companyName
+            streetAddress1
+            streetAddress2
+            city
+            cityArea
+            postalCode
+            countryArea
+            phone
+            isDefaultShippingAddress
+            isDefaultBillingAddress
+        }
+        stocks(before: $before, after: $after, first: $first, last: $last) {
+            totalCount
+            pageInfo {
+                hasNextPage
+                hasPreviousPage
+                startCursor
+                endCursor
+            }
+            edges {
+                cursor
+                node {
+                    id
+                    quantity
+                    quantityAllocated
+                    quantityReserved
+                    productVariant {
+                        id
+                        privateMetafields
+                        metafields
+                        name
+                        sku
+                        trackInventory
+                        quantityLimitPerCustomer
+                        channel
+                        margin
+                        quantityOrdered
+                        quantityAvailable
+                        created
+                        updatedAt
+                        externalReference
+                        product {
+                            id
+                            privateMetafields
+                            metafields
+                            seoTitle
+                            seoDescription
+                            name
+                            description
+                            slug
+                            created
+                            updatedAt
+                            chargeTaxes
+                            rating
+                            channel
+                            descriptionJson
+                            isAvailable
+                            availableForPurchase
+                            availableForPurchaseAt
+                            isAvailableForPurchase
+                            externalReference
+                            productType {
+                                id
+                                privateMetafields
+                                metafields
+                                name
+                                slug
+                                hasVariants
+                                isShippingRequired
+                                isDigital
+                                kind
+                            }
+                            category {
+                                id
+                                privateMetafields
+                                metafields
+                                seoTitle
+                                seoDescription
+                                name
+                                description
+                                slug
+                                level
+                                descriptionJson
+                                updatedAt
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

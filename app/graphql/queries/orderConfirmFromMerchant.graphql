@@ -1,0 +1,41 @@
+mutation orderConfirmFromMerchant($orderId: ID!) {
+    orderConfirm(id: $orderId) {
+        order {
+            id
+            created
+            updatedAt
+            status
+            trackingClientId
+            shippingMethodName
+            collectionPointName
+            actions
+            number
+            original
+            origin
+            isPaid
+            paymentStatus
+            paymentStatusDisplay
+            authorizeStatus
+            chargeStatus
+            taxExemption
+            shippingTaxRate
+            shippingTaxClassName
+            token
+            voucherCode
+            customerNote
+            redirectUrl
+            statusDisplay
+            canFinalize
+            userEmail
+            isShippingRequired
+            languageCode
+            languageCodeEnum
+            discountName
+            translatedDiscountName
+            displayGrossPrices
+            externalReference
+            checkoutId
+            metafields
+        }
+    }
+}

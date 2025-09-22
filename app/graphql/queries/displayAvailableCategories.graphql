@@ -1,0 +1,52 @@
+query displayAvaiableCategories(
+    $where: CategoryWhereInput
+    $sortBy: CategorySortingInput
+    $first: Int
+    $after: String
+    $before: String
+    $last: Int
+    $level: Int
+) {
+    categories(
+        where: $where
+        sortBy: $sortBy
+        first: $first
+        after: $after
+        before: $before
+        last: $last
+        level: $level
+    ) {
+        totalCount
+        pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+        }
+        edges {
+            cursor
+            node {
+                id
+                seoTitle
+                seoDescription
+                name
+                description
+                slug
+                level
+                descriptionJson
+                updatedAt
+                parent {
+                    id
+                    seoTitle
+                    seoDescription
+                    name
+                    description
+                    slug
+                    level
+                    descriptionJson
+                    updatedAt
+                }
+            }
+        }
+    }
+}

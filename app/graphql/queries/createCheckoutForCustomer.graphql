@@ -1,0 +1,84 @@
+mutation createCheckoutForCustomer(
+    $lines: [CheckoutLineInput!]!
+    $channelSlug: String
+    $customer_id: String!
+) {
+    checkoutCreate(
+        input: {
+            lines: $lines
+            channel: $channelSlug
+            metadata: { key: "customer_id", value: $customer_id }
+        }
+    ) {
+        created
+        checkoutErrors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        errors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        checkout {
+            id
+            created
+            updatedAt
+            lastChange
+            voucherCode
+            email
+            lines {
+                id
+                quantity
+                requiresShipping
+                isGift
+                variant {
+                    id
+                    name
+                    sku
+                    trackInventory
+                    quantityLimitPerCustomer
+                    channel
+                    margin
+                    quantityOrdered
+                    quantityAvailable
+                    created
+                    updatedAt
+                    externalReference
+                    channelListings {
+                        id
+                        price {
+                            currency
+                            amount
+                        }
+                    }
+                    product {
+                        id
+                        name
+                    }
+                }
+            }
+            totalPrice {
+                currency
+                gross {
+                    currency
+                    amount
+                }
+            }
+            subtotalPrice {
+                currency
+                gross {
+                    currency
+                    amount
+                }
+            }
+        }
+    }
+}

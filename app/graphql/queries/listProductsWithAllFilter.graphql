@@ -1,0 +1,60 @@
+query listProductsWithAllFilters (
+    $filter: ProductFilterInput
+    $where: ProductWhereInput
+    $sortBy: ProductOrder,
+    $search: String
+    $channel: String
+    $before: String
+    $after: String
+    $first: Int
+    $last: Int
+) {
+    products(
+        filter: $filter
+        where: $where
+        sortBy: $sortBy
+        search: $search
+        channel: $channel
+        before: $before
+        after: $after
+        first: $first
+        last: $last
+    ) {
+        totalCount
+        pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+        }
+        edges {
+            cursor
+            node {
+                id
+        metafields
+        name
+        productType {
+            name
+        }
+        defaultVariant {
+            id
+            name
+            sku
+            channelListings {
+                price {
+                    currency
+                    amount
+                }
+            }
+        }
+        thumbnail {
+            url
+            alt
+        }
+        productVariants {
+            totalCount
+        }
+            }
+        }
+    }
+}

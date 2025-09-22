@@ -1,0 +1,10 @@
+query getChannelByID ($channelId: ID!) {
+    channel(id: $channelId) {
+        id
+        slug
+        name
+        isActive
+        currencyCode
+        hasOrders
+    }
+}

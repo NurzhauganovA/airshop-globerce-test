@@ -1,0 +1,39 @@
+query channelsList {
+    channels {
+        id
+        slug
+        name
+        isActive
+        currencyCode
+        hasOrders
+        privateMetadata {
+            key
+            value
+        }
+        metadata {
+            key
+            value
+        }
+        paymentSettings {
+            defaultTransactionFlowStrategy
+            releaseFundsForExpiredCheckouts
+            checkoutTtlBeforeReleasingFunds
+            checkoutReleaseFundsCutOffDate
+        }
+        orderSettings {
+            automaticallyConfirmAllNewOrders
+            automaticallyFulfillNonShippableGiftCard
+            expireOrdersAfter
+            markAsPaidStrategy
+            deleteExpiredOrdersAfter
+            allowUnpaidOrders
+            includeDraftOrderInVoucherUsage
+            draftOrderLinePriceFreezePeriod
+            useLegacyLineDiscountPropagation
+        }
+        checkoutSettings {
+            useLegacyErrorFlow
+            automaticallyCompleteFullyPaidCheckouts
+        }
+    }
+}

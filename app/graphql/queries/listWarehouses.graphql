@@ -1,0 +1,58 @@
+query listWarehousesByIDs (
+    $filter: WarehouseFilterInput
+    $sortBy: WarehouseSortingInput
+    $before: String
+    $after: String
+    $first: Int
+    $last: Int
+) {
+    warehouses(
+        filter: $filter
+        sortBy: $sortBy
+        before: $before
+        after: $after
+        first: $first
+        last: $last
+    ) {
+        totalCount
+        pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+        }
+        edges {
+            cursor
+            node {
+                id
+                metafields
+                name
+                slug
+                email
+                isPrivate
+                companyName
+                clickAndCollectOption
+                externalReference
+                address {
+                    id
+                    firstName
+                    lastName
+                    companyName
+                    streetAddress1
+                    streetAddress2
+                    city
+                    cityArea
+                    postalCode
+                    countryArea
+                    phone
+                    isDefaultShippingAddress
+                    isDefaultBillingAddress
+                    country {
+                        code
+                        country
+                    }
+                }
+            }
+        }
+    }
+}

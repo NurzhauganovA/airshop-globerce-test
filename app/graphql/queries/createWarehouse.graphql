@@ -1,0 +1,26 @@
+mutation createWarehouse ($input: WarehouseCreateInput!) {
+    createWarehouse(input: $input) {
+        errors {
+            field
+            message
+            code
+            shippingZones
+        }
+        warehouseErrors {
+            field
+            message
+            code
+            shippingZones
+        }
+        warehouse {
+            id
+            name
+            slug
+            email
+            isPrivate
+            companyName
+            clickAndCollectOption
+            externalReference
+        }
+    }
+}

@@ -1,0 +1,42 @@
+mutation UpdateWarehouse (
+    $input: WarehouseUpdateInput!
+    $id: ID!
+) {
+    updateWarehouse(input: $input, id: $id) {
+        errors {
+            field
+            message
+            code
+            shippingZones
+        }
+        warehouseErrors {
+            field
+            message
+            code
+            shippingZones
+        }
+        warehouse {
+            id
+            name
+            slug
+            email
+            isPrivate
+            companyName
+            clickAndCollectOption
+            externalReference
+            address {
+                id
+                companyName
+                streetAddress1
+                streetAddress2
+                city
+                cityArea
+                postalCode
+                countryArea
+                phone
+                isDefaultShippingAddress
+                isDefaultBillingAddress
+            }
+        }
+    }
+}

@@ -1,0 +1,113 @@
+query listProductsByMerchant (
+    $first: Int, 
+    $merchant_id: String,
+    $after: String
+    ) {
+    products(
+        first: $first
+        filter: { metadata: [{ key: "merchant_id", value: $merchant_id }] }
+        after: $after
+    ) {
+        totalCount
+        edges {
+            cursor
+            node {
+                id
+                seoTitle
+                seoDescription
+                name
+                description
+                slug
+                created
+                updatedAt
+                chargeTaxes
+                rating
+                channel
+                descriptionJson
+                isAvailable
+                externalReference
+                category {
+                    id
+                    seoTitle
+                    seoDescription
+                    name
+                    description
+                    slug
+                    level
+                    descriptionJson
+                    updatedAt
+                }
+                productType {
+                    id
+                    name
+                    slug
+                    hasVariants
+                    isShippingRequired
+                    isDigital
+                }
+                defaultVariant {
+                    id
+                    metadata {
+                        key
+                        value
+                    }
+                    name
+                    sku
+                    trackInventory
+                    quantityLimitPerCustomer
+                    channel
+                    channelListings {
+                        price {
+                            currency
+                            amount
+                        }
+                    }
+                }
+                variants {
+                    id
+                    metadata {
+                        key
+                        value
+                    }
+                    name
+                    sku
+                    channel
+                    channelListings {
+                        price {
+                            currency
+                            amount
+                        }
+                    }
+                    media {
+                        id
+                        sortOrder
+                        alt
+                        type
+                        oembedData
+                        productId
+                        metadata {
+                            key
+                            value
+                        }
+                        url
+                    }
+                }
+                media {
+                    id
+                    sortOrder
+                    alt
+                    type
+                    oembedData
+                    url
+                    productId
+                }
+            }
+        }
+        pageInfo {
+            hasNextPage
+            hasPreviousPage
+            startCursor
+            endCursor
+        }
+    }
+}

@@ -1,0 +1,43 @@
+mutation variantSetPrice(
+    $variantId: ID!
+    $channelId: ID!
+    $price: PositiveDecimal!
+) {
+    productVariantChannelListingUpdate(
+        input: { channelId: $channelId, price: $price }
+        id: $variantId
+    ) {
+        productChannelListingErrors {
+            field
+            message
+            code
+            attributes
+            values
+            channels
+            variants
+        }
+        errors {
+            field
+            message
+            code
+            attributes
+            values
+            channels
+            variants
+        }
+        variant {
+            id
+            name
+            sku
+            trackInventory
+            quantityLimitPerCustomer
+            channel
+            margin
+            quantityOrdered
+            quantityAvailable
+            created
+            updatedAt
+            externalReference
+        }
+    }
+}

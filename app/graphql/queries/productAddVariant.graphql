@@ -1,0 +1,43 @@
+mutation createVariantForProduct (
+    $product_id: ID!
+    $sku: String
+    $name: String ) {
+    productVariantCreate(
+        input: {
+            sku: $sku
+            name: $name
+            product: $product_id
+            trackInventory: false
+            attributes: []
+        }
+    ) {
+        productErrors {
+            field
+            message
+            code
+            attributes
+            values
+        }
+        errors {
+            field
+            message
+            code
+            attributes
+            values
+        }
+        productVariant {
+            id
+            name
+            sku
+            trackInventory
+            quantityLimitPerCustomer
+            channel
+            margin
+            quantityOrdered
+            quantityAvailable
+            created
+            updatedAt
+            externalReference
+        }
+    }
+}

@@ -1,0 +1,45 @@
+mutation fullFillOrder (
+    $lines: [OrderFulfillLineInput!]!
+    $allowStockToBeExceeded: Boolean
+    $trackingNumber: String
+    $orderId: ID!
+) {
+    orderFulfill(
+        input: {
+            lines: $lines
+            allowStockToBeExceeded: $allowStockToBeExceeded
+            trackingNumber: $trackingNumber
+        }
+        order: $orderId
+    ) {
+        fulfillments {
+            id
+            fulfillmentOrder
+            status
+            trackingNumber
+            created
+            statusDisplay
+        }
+        orderErrors {
+            field
+            message
+            code
+            warehouse
+            orderLines
+            variants
+            addressType
+        }
+        errors {
+            field
+            message
+            code
+            warehouse
+            orderLines
+            variants
+            addressType
+        }
+        order {
+            id
+        }
+    }
+}

@@ -1,0 +1,52 @@
+mutation createOrderFromSaleorCheckout (
+    $checkoutId: ID!,
+    $merchantId: String!
+) {
+    orderCreateFromCheckout(
+        id: $checkoutId
+        metadata: [{ key: "merchant_id", value: $merchantId }]
+    ) {
+        order {
+            id
+            created
+            updatedAt
+            status
+            trackingClientId
+            shippingMethodName
+            collectionPointName
+            number
+            original
+            origin
+            isPaid
+            paymentStatus
+            paymentStatusDisplay
+            authorizeStatus
+            chargeStatus
+            taxExemption
+            shippingTaxRate
+            shippingTaxClassName
+            token
+            voucherCode
+            customerNote
+            redirectUrl
+            statusDisplay
+            canFinalize
+            userEmail
+            isShippingRequired
+            languageCode
+            languageCodeEnum
+            discountName
+            translatedDiscountName
+            displayGrossPrices
+            externalReference
+            checkoutId
+        }
+        errors {
+            field
+            message
+            code
+            variants
+            lines
+        }
+    }
+}

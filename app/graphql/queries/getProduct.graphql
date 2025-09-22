@@ -1,0 +1,25 @@
+query GetProduct($id: ID!) {
+    product(id: $id) {
+        id
+        name
+        slug
+        description
+        variants {
+            id
+            name
+            sku
+            pricing {
+                price {
+                    gross {
+                        amount
+                        currency
+                    }
+                }
+            }
+            stocks {
+                quantity
+            }
+        }
+        metafields
+    }
+}

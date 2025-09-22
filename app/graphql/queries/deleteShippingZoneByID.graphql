@@ -1,0 +1,20 @@
+mutation deleteShippingZoneByID(
+    $shippingZoneID: ID!
+) {
+    shippingZoneDelete(id: $shippingZoneID) {
+        shippingErrors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        errors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+    }
+}

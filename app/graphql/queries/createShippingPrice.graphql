@@ -1,0 +1,39 @@
+mutation createShippingPrice(
+    $name: String
+    $maximumDeliveryDays: Int
+    $minimumDeliveryDays: Int
+    $szId: ID!
+) {
+    shippingPriceCreate(
+        input: {
+            name: $name
+            maximumDeliveryDays: $maximumDeliveryDays
+            minimumDeliveryDays: $minimumDeliveryDays
+            type: PRICE
+            shippingZone: $szId
+        }
+    ) {
+        shippingErrors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        errors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        shippingMethod {
+            id
+            name
+            description
+            type
+            maximumDeliveryDays
+            minimumDeliveryDays
+        }
+    }
+}

@@ -1,0 +1,44 @@
+mutation updateCheckoutAddresses(
+    $city: String!
+    $country: CountryCode!
+    $street1: String
+    $street2: String
+    $validate: Boolean
+    $checkoutId: ID!
+    $phone: String
+) {
+    checkoutBillingAddressUpdate(
+        billingAddress: {
+            city: $city
+            country: $country
+            streetAddress1: $street1
+            streetAddress2: $street2
+            skipValidation: $validate
+            phone: $phone
+        }
+        id: $checkoutId
+    ) {
+        errors {
+            field
+            message
+            code
+        }
+    }
+    checkoutShippingAddressUpdate(
+        shippingAddress: {
+            city: $city
+            country: $country
+            streetAddress1: $street1
+            streetAddress2: $street2
+            skipValidation: $validate
+            phone: $phone
+        }
+        id: $checkoutId
+    ) {
+        errors {
+            field
+            message
+            code
+        }
+    }
+}

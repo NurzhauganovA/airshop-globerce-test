@@ -1,0 +1,23 @@
+mutation createTransactionForOrder (
+    $orderId: ID!
+    $transactionInput: TransactionCreateInput!
+) {
+    transactionCreate(id: $orderId, transaction: $transactionInput) {
+        errors {
+            field
+            message
+            code
+        }
+        transaction {
+            id
+            privateMetafields
+            metafields
+            token
+            createdAt
+            modifiedAt
+            actions
+            name
+            message
+        }
+    }
+}

@@ -1,0 +1,49 @@
+mutation setShippingMethodForCheckout($shippingMethod: ID!, $checkoutId: ID!) {
+    checkoutShippingMethodUpdate(id: $checkoutId, shippingMethodId: $shippingMethod) {
+        errors {
+            field
+            message
+            code
+            variants
+            lines
+            addressType
+        }
+        checkout {
+            id
+            privateMetafields
+            metafields
+            created
+            updatedAt
+            lastChange
+            customerNote
+            note
+            discountName
+            translatedDiscountName
+            voucherCode
+            email
+            isShippingRequired
+            quantity
+            stockReservationExpires
+            deliveryMethod {
+                ... on ShippingMethod {
+                    id
+                    privateMetafields
+                    metafields
+                    type
+                    name
+                    description
+                    maximumDeliveryDays
+                    minimumDeliveryDays
+                    active
+                    message
+                }
+            }
+            taxExemption
+            token
+            languageCode
+            displayGrossPrices
+            authorizeStatus
+            chargeStatus
+        }
+    }
+}

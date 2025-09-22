@@ -1,0 +1,76 @@
+mutation updateShippingZone(
+    $shippingZoneID: ID!
+    $name: String
+    $addWarehouses: [ID!]
+    $removeWarehouses: [ID!]
+) {
+    shippingZoneUpdate(
+        id: $shippingZoneID
+        input: {
+            name: $name
+            addWarehouses: $addWarehouses
+            removeWarehouses: $removeWarehouses
+        }
+    ) {
+        shippingErrors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        errors {
+            field
+            message
+            code
+            warehouses
+            channels
+        }
+        shippingZone {
+            id
+            privateMetafields
+            metafields
+            name
+            default
+            description
+            shippingMethods {
+                id
+                privateMetafields
+                metafields
+                name
+                description
+                type
+                maximumDeliveryDays
+                minimumDeliveryDays
+                maximumOrderPrice {
+                    currency
+                    amount
+                }
+                minimumOrderPrice {
+                    currency
+                    amount
+                }
+                minimumOrderWeight {
+                    unit
+                    value
+                }
+                maximumOrderWeight {
+                    unit
+                    value
+                }
+            }
+            warehouses {
+                id
+                privateMetafields
+                metafields
+                name
+                email
+                isPrivate
+                companyName
+                clickAndCollectOption
+                externalReference
+                slug
+            }
+        }
+    }
+}

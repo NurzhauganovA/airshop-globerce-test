@@ -1,0 +1,48 @@
+settings:
+  kubeContext: "KUBECONTEXT_NAME" # the name of the context to be created
+  bearerToken: true
+  clusterURI: "https://kubernetes.default"
+
+certificates:
+  caCrt: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+namespaces:
+  NAMESPACE_NAME:
+
+preconfiguredHelmRepos:
+  - projects
+
+appsTemplates:
+  default-chart: &default-chart
+    namespace: NAMESPACE_NAME
+    enabled: true
+    chart: "projects/default-chart"
+    version: "1.9.3"
+
+apps:
+  sale-fast:
+    <<: *default-chart
+    valuesFile: "k8s/ENVIRONMENT/back.yml"
+    values:
+      securityContext:
+        enabled: true
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+      containerSecurityContext:
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+    set:
+      image.name: "IMAGE_TO_REPLACE:TAG"
+
+  sale-fast-celery:
+    <<: *default-chart
+    valuesFile: "k8s/ENVIRONMENT/celery.yml"
+    set:
+      image.name: "IMAGE_TO_REPLACE:TAG"
+
+  redis:
+    <<: *default-chart
+    valuesFile: "k8s/ENVIRONMENT/redis.yml"
+    set:
+      image.name: "redis:latest"

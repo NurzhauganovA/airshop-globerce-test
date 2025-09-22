@@ -1,0 +1,23 @@
+mutation addVariantStock (
+    $stocks: [StockInput!]!
+    $variantId : ID!
+) {
+    productVariantStocksCreate(stocks: $stocks, variantId: $variantId) {
+        bulkStockErrors {
+            field
+            message
+            code
+            attributes
+            values
+            index
+        }
+        errors {
+            field
+            message
+            code
+            attributes
+            values
+            index
+        }
+    }
+}
