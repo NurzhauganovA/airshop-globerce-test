@@ -7,6 +7,7 @@ services:
       - "8000:8000"
     volumes:
       - .:/app
+      - /app/__pycache__
     environment:
       # This DATABASE_URL uses the name of the db service and the POSTGRES_USER
       # and POSTGRES_DB defined below.
@@ -27,7 +28,7 @@ services:
     # schema is always up-to-date before the app starts.
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000"             
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level debug"
     depends_on:
       - db
       - redis

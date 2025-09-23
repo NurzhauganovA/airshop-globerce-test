@@ -2,8 +2,23 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.models.internal_model import Merchant
+
+
+class MerchantSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    legal_name: str
+    bin: str
+    iban: str
+    phone: str
+    company_id: str
+    company_type: str
+    registration_date: str
+    created_at: str
+    updated_at: str
 
 
 class MerchantAddressCreate(BaseModel):
@@ -36,7 +51,7 @@ class MerchantOnboardRequest(BaseModel):
     company_id: str
     company_type: str = Field(..., pattern="^(LLC|IP)$")
     registration_date: str
-    employee: MerchantOnboardRequestEmployee
+    employee: Optional[MerchantOnboardRequestEmployee] = None
 
     def to_db_model(self) -> Merchant:
         """returns db model to saving"""

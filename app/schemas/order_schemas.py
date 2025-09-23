@@ -7,10 +7,9 @@
 # order by airlink / process-payment / get-offers
 # order by airlink / process-payment / offer post
 # order by airlink / process-payment / offer patch
-
-
+from prompt_toolkit.contrib.regular_languages.regex_parser import AnyNode
 from pydantic import BaseModel, HttpUrl
-from typing import Optional
+from typing import Optional, Any, List
 from app.schemas.airlink_schemas import AirlinkResponseSchema
 from app.schemas.integrations import MerchantOnboardResponse
 from app.graphql.generated_client.get_order_by_id import GetOrderByIDOrder
@@ -111,7 +110,7 @@ class OrderProcessPaymentResponse(BaseModel):
 
 
 class SaleorOrderSchema(BaseModel):
-    order: GetOrderByIDOrder
+    order: Any
     customer: CustomerBaseSchema
     merchant: MerchantOnboardRequest
 

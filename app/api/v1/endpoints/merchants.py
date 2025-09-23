@@ -35,7 +35,7 @@ from app.controllers.merchant_controller import (
     get_merchant_shipping_zone_by_id,
     get_merchant_warehouse_by_id,
     create_db_merchant_warehouse,
-    list_merchant_warehouses,
+    list_merchant_warehouses, list_orders_for_merchant_with_transactions, enrich_orders_with_customers,
 )
 from app.controllers.merchant_site_controller import merchant_site_controller
 from app.core import security
@@ -47,7 +47,7 @@ from app.graphql.generated_client import (
     ChannelUpdateInput,
     ShippingMethodChannelListingAddInput,
     WarehouseUpdateInput,
-    StockInput,
+    StockInput, OrderFilterInput,
 )
 from app.graphql.generated_client.client import CategoryWhereInput, WarehouseFilterInput
 from app.models.internal_model import User, Airlink
@@ -80,7 +80,7 @@ from app.schemas.merchant_site_shemas import (
 from app.schemas.order_schemas import (
     SaleorOrdersListSchema,
     MerchantPaymentMethodSchema,
-    MerchantPaymentMethodPaginatedResponse,
+    MerchantPaymentMethodPaginatedResponse, SaleorOrderSchema,
 )
 from app.schemas.product_schemas import (
     CreateProductRequestSchema,
@@ -1203,10 +1203,77 @@ async def create_warehouse_stock(
     return create_stock_response.product_variant_stocks_create.bulk_stock_errors
 
 
-@router.get("/orders", response_model=SaleorOrdersListSchema)
-async def list_orders_for_merchant():
-    pass
+@router.get("/orders", response_model=CursorPageWithOutTotal[SaleorOrderSchema])
+async def list_orders_for_merchant(
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+    params: CursorParamsWithOutTotal = Depends(),
+    first: Optional[int] = Query(
+        25, description="Returns the first n elements from the list."
+    ),
+    last: Optional[int] = Query(
+        None, description="Returns the last n elements from the list."
+    ),
+    after: Optional[str] = Query(
+        None,
+        description="Returns the elements in the list that come after the specified cursor.",
+    ),
+    before: Optional[str] = Query(
+        None,
+        description="Returns the elements in the list that come before the specified cursor.",
+    ),
+):
+    """
+    Получаем список заказов мерчанта с пагинацией.
+    Возвращает только заказы, у которых есть соответствующие транзакции в БД
+    """
+    if not current_user.is_merchant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only merchants can view orders.",
+        )
 
+    if not current_user.merchants:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any merchant.",
+        )
+
+    merchant = current_user.merchants[0]
+    try:
+        order_filter = OrderFilterInput(metadata=[{"key": "merchant_id", "value": "6f183b52-2cbf-4961-9f5f-790a02e2eebc"}])
+
+        order_response = await saleor_service.client.get_order_list(
+            filter=order_filter,
+            first=first,
+            last=last,
+            after=after,
+            before=before
+        )
+
+        if not order_response.orders or not order_response.orders.edges:
+            return CursorPageWithOutTotal.create(items=[], params=params)
+
+        saleor_orders = [edge.node for edge in order_response.orders.edges]
+
+        filtered_orders = list_orders_for_merchant_with_transactions(
+            db=db,
+            merchant_id="6f183b52-2cbf-4961-9f5f-790a02e2eebc",
+            saleor_orders=saleor_orders
+        )
+        enriched_orders = enrich_orders_with_customers(
+            db=db,
+            merchant_id="6f183b52-2cbf-4961-9f5f-790a02e2eebc",
+            saleor_orders=filtered_orders
+        )
+
+        return CursorPageWithOutTotal.create(items=enriched_orders, params=params)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch orders: {str(e)}",
+        )
 
 @router.get("/payment-methods", response_model=MerchantPaymentMethodPaginatedResponse)
 async def list_payment_methods_for_merchant():
