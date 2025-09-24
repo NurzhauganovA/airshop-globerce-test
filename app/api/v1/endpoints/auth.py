@@ -43,7 +43,7 @@ async def send_otp(
     # Check if user exists, or create a new one
     user = user_controller.get_by_phone(db, phone_number=request.phone_number)
     if not user:
-        user = user_controller.create_with_phone(db, phone_number=request.phone_number)
+        user = user_controller.get_or_create_with_phone(db, phone_number=request.phone_number)
         # After creating the user, create the associated customer profile
         db.commit()
         db.refresh(user)

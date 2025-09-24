@@ -1,14 +1,11 @@
-# AirlinkController
-# Creates methods to create models based on airlink_schemas
-# Implements creation of arilink model
-# Implements creation of airlink images
-# implements creation of arilink AirlinkCheckoutItem
-
-# app/controllers/airlink_controller.py
-
+import uuid
+from datetime import datetime, timezone
 from typing import List, Optional
+
 from sqlalchemy.orm import Session
+
 from app.controllers.base import BaseController
+from app.core.config import settings
 from app.models.internal_model import Airlink, AirlinkImage, AirlinkCheckoutItem
 from app.schemas.airlink_schemas import (
     AirlinkCreateRequest,
@@ -16,9 +13,6 @@ from app.schemas.airlink_schemas import (
     AirlinkProductSchema,
     AirlinkImages,
 )
-import uuid
-from datetime import datetime, timezone
-from app.core.config import settings
 
 
 class AirlinkController(
@@ -58,7 +52,7 @@ class AirlinkController(
 
     # implements adding images to airlink
     def _add_images_to_airlink(
-        self, db: Session, db_airlink: Airlink, images: Optional[List[AirlinkImages]]
+            self, db: Session, db_airlink: Airlink, images: Optional[List[AirlinkImages]]
     ):
         """
         Adds images to an Airlink.
@@ -74,10 +68,10 @@ class AirlinkController(
             db.add(db_image)
 
     def _add_products_to_airlink(
-        self,
-        db: Session,
-        db_airlink: Airlink,
-        products: Optional[List[AirlinkProductSchema]],
+            self,
+            db: Session,
+            db_airlink: Airlink,
+            products: Optional[List[AirlinkProductSchema]],
     ):
         """
         Adds products and their variants as checkout items to an Airlink.
@@ -88,7 +82,8 @@ class AirlinkController(
                     id=str(uuid.uuid4()),
                     airlink_id=db_airlink.id,
                     saleor_variant_id=variant_in.variant_id,
-                    quantity=variant_in.stock_quantity,  # Assuming stock_quantity from schema is the quantity for airlink
+                    quantity=variant_in.stock_quantity,
+                    # Assuming stock_quantity from schema is the quantity for airlink
                     price=variant_in.price,
                 )
                 db.add(db_checkout_item)
@@ -110,7 +105,7 @@ class AirlinkController(
         db_airlink.total_price = total_price
 
     def update_airlink(
-        self, db: Session, db_airlink: Airlink, airlink_update: AirlinkUpdateRequest
+            self, db: Session, db_airlink: Airlink, airlink_update: AirlinkUpdateRequest
     ) -> Airlink:
         """
         Updates an existing Airlink.
@@ -165,3 +160,6 @@ class AirlinkController(
         db.commit()
         db.refresh(db_airlink)
         return db_airlink
+
+
+airlink_controller = AirlinkController(Airlink)

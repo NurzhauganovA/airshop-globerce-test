@@ -9,6 +9,8 @@ from sqlalchemy import or_
 from app.schemas.merchant_site_shemas import (
     MerchantSiteCreateSchema,
     MerchantSiteUpdateSchema,
+    MerchantSiteSchema,
+    MerchantSiteCarouselItemSchema,
 )
 
 
@@ -81,6 +83,27 @@ class MerchantSiteController(
     ) -> Optional[MerchantSite]:
         return (
             db.query(self._model).filter(self._model.merchant_id == merchant_id).first()
+        )
+
+    @staticmethod
+    def serialize_merchant_site(merchant_site: MerchantSite) -> MerchantSiteSchema:
+        """
+        Serialize MerchantSite model to MerchantSiteSchema
+        """
+        return MerchantSiteSchema(
+            id=merchant_site.id,
+            site_preffix=merchant_site.site_preffix,
+            site_suffix=merchant_site.site_suffix,
+            is_active=merchant_site.is_active,
+            site_carousel_items=[
+                MerchantSiteCarouselItemSchema(
+                    id=item.id,
+                    url=item.url,
+                    is_active=item.is_active,
+                    order=item.order,
+                )
+                for item in merchant_site.merchant_site_carousel_items
+            ],
         )
 
 

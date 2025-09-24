@@ -1,24 +1,79 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status, Form, Query
+from redis.asyncio import Redis
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import merchant_controller, transactions_controller
+from app.controllers.airlink_controller import airlink_controller
+from app.controllers.internal import user_controller, customer_controller
+from app.controllers.transactions_controller import get_card_request_by_id
 from app.core import security
-from app.core.database import get_db
+from app.core.config import settings
+from app.core.database import get_db, get_async_db_session
+from app.core.redis_client import get_redis_client
 from app.models.internal_model import User, EmployeeProfile
-from app.schemas.airlink_schemas import AirlinkResponseSchema
+from app.schemas.airlink_schemas import (
+    AirlinkResponseSchema,
+    CreateOrderByAirlinkAndPhoneNumberPayload,
+    CreateOrderByAirlinkAndPhoneNumberResponse,
+)
 from app.schemas.integrations import MerchantOnboardRequest, MerchantOnboardResponse
 from app.schemas.loanrequest_schemas import (
     MFOHookSchema,
     MFOHookResponseSchema,
     LoanOfferCreateSchema,
 )
-from app.controllers.transactions_controller import get_card_request_by_id
-from app.controllers.internal import user_controller
+from app.services.airlink.create_order import CreateOrderByAirlinkService
+from app.services.order.idempotency_service import (
+    OrderCreationIdempotencyService,
+    OrderIdempotencyKey,
+    RedisJSONCache,
+    RedisLockManager,
+)
+from app.services.saleor import SaleorService
 
 # from app.worker import create_fpay_config_task, create_mfo_config_task, create_saleor_warehouse_task
 
 
 router = APIRouter()
+
+ss = SaleorService(
+    saleor_api_url=settings.SALEOR_GRAPHQL_URL,
+    saleor_api_token=settings.SALEOR_API_TOKEN,
+)
+
+ORDER_RESPONSE_CACHE_PREFIX = "order:create:response:"
+ORDER_RESPONSE_CACHE_TTL_SECONDS = 60
+LOCK_TIMEOUT_SECONDS = 60
+LOCK_BLOCKING_TIMEOUT_SECONDS = 2
+LOCK_RETRY_DELAY_SECONDS = 0.1
+
+
+def _build_order_idempotency_service(
+        *,
+        redis: Redis,
+        key: OrderIdempotencyKey,
+) -> OrderCreationIdempotencyService:
+    cache = RedisJSONCache(redis)
+
+    def lock_builder() -> RedisLockManager:
+        return RedisLockManager(
+            redis,
+            key=key.lock_key(),
+            lock_timeout_seconds=LOCK_TIMEOUT_SECONDS,
+            blocking_timeout_seconds=LOCK_BLOCKING_TIMEOUT_SECONDS,
+            retry_delay_seconds=LOCK_RETRY_DELAY_SECONDS,
+        )
+
+    return OrderCreationIdempotencyService(
+        cache=cache,
+        lock_builder=lock_builder,
+        cache_ttl_seconds=ORDER_RESPONSE_CACHE_TTL_SECONDS,
+        cache_key_prefix=ORDER_RESPONSE_CACHE_PREFIX,
+    )
 
 
 @router.post(
@@ -26,11 +81,11 @@ router = APIRouter()
     response_model=MerchantOnboardResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def register_merchant(
-    *,
-    db: Session = Depends(get_db),
-    merchant_in: MerchantOnboardRequest,
-    current_user: User = Depends(security.get_current_technical_user_basic_auth),
+async def register_merchant(
+        *,
+        db: AsyncSession = Depends(get_async_db_session),
+        merchant_in: MerchantOnboardRequest,
+        current_user: User = Depends(security.get_current_technical_user_basic_auth),
 ):
     """
     Onboard a new merchant with their legal details, employees, address,
@@ -38,38 +93,38 @@ def register_merchant(
 
     **This endpoint requires technical user authentication via HTTP Basic Auth.**
     """
+    validated = merchant_in.model_validate(merchant_in)
     # 1. Create the merchant.
-
-    new_merchant = merchant_controller.create_merchant(
+    
+    new_merchant = await merchant_controller.create_merchant_async(
         db=db, merchant=merchant_in.to_db_model()
     )
 
     # Create user and employee profile bind it to merhcant
-    new_user = user_controller.create_with_phone(db=db, phone_number=merchant_in.phone)
+    new_user = await user_controller.get_or_create_with_phone_async(db=db, phone_number=merchant_in.phone)
 
     new_user.is_merchant = True
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
 
     # Create an EmployeeProfile instance from the request data
     employee_profile_data = EmployeeProfile(
         user_id=new_user.id,
-        first_name=merchant_in.employee.first_name,
-        middle_name=merchant_in.employee.middle_name,
-        last_name=merchant_in.employee.last_name,
-        profile_id=merchant_in.employee.profile_id,
-        external_id=merchant_in.employee.external_id,
+        first_name=validated.employee.first_name,
+        middle_name=validated.employee.middle_name,
+        last_name=validated.employee.last_name,
+        profile_id=validated.employee.profile_id,
+        external_id=validated.employee.external_id,
     )
-    merchant_controller.create_employee_for_merchant(
+    await merchant_controller.create_employee_for_merchant_async(
         db=db,
         merchant=new_merchant,
         employee=employee_profile_data,  # Pass the EmployeeProfile object
     )
 
-
     # 3. Setup default payment methods for the new merchant.
-    merchant_controller.setup_default_payment_methods(db=db, merchant=new_merchant)
+    await merchant_controller.setup_default_payment_methods_async(db=db, merchant=new_merchant)
 
     # 4. Trigger asynchronous tasks (commented out for now)
     # for mpm in merchant_payment_methods:
@@ -88,8 +143,8 @@ def register_merchant(
     #         merchant_id=merchant_address.merchant_id, address_id=merchant_address.address_id
     #     )
 
-    db.commit()
-    db.refresh(new_merchant)
+    await db.commit()
+    await db.refresh(new_merchant)
 
     return {
         "status": "success",
@@ -100,9 +155,9 @@ def register_merchant(
 
 @router.post("/loan-requests/{loan_request_id}", response_model=MFOHookResponseSchema)
 async def update_loan_request(
-    loan_request_id: str,
-    request: MFOHookSchema,
-    db: Session = Depends(get_db),
+        loan_request_id: str,
+        request: MFOHookSchema,
+        db: Session = Depends(get_db),
 ) -> MFOHookResponseSchema | None:
     """
     Method for updating loan requests with status or/and offers and inform about issuance
@@ -158,16 +213,16 @@ async def update_loan_request(
 
 @router.patch("/card-requests/{card_request_id}")
 async def update_card_request(
-    cart_request_id: str,
-    pg_order_id: str = Form(...),
-    pg_reference: str = Form(...),
-    pg_card_pan: str = Form(...),
-    pg_payment_date: str = Form(...),
-    pg_result: int = Form(...),
-    pg_can_reject: int = Form(...),
-    pg_ps_full_amount: float = Form(...),
-    pg_net_amount: float = Form(...),
-    db: Session = Depends(get_db),
+        cart_request_id: str,
+        pg_order_id: str = Form(...),
+        pg_reference: str = Form(...),
+        pg_card_pan: str = Form(...),
+        pg_payment_date: str = Form(...),
+        pg_result: int = Form(...),
+        pg_can_reject: int = Form(...),
+        pg_ps_full_amount: float = Form(...),
+        pg_net_amount: float = Form(...),
+        db: Session = Depends(get_db),
 ):
     """
     Method for updating card requests with status and inform about processing
@@ -209,8 +264,8 @@ async def update_card_request(
     response_model=list[AirlinkResponseSchema],
 )
 async def list_airlinks_by_merchant(
-    merchant_bin: str | None = Query(None, description="Filter by merchant BIN"),
-    db: Session = Depends(get_db),
+        merchant_bin: str | None = Query(None, description="Filter by merchant BIN"),
+        db: Session = Depends(get_db),
 ) -> list[AirlinkResponseSchema] | None:
     """
     List all airlinks for a specific merchant.
@@ -232,3 +287,73 @@ async def list_airlinks_by_merchant(
         )
 
     return airlinks
+
+
+@router.post(
+    "/integrations/order",
+    status_code=status.HTTP_200_OK,
+    dependencies=[
+        Depends(security.get_current_technical_user_basic_auth)
+    ]
+)
+async def create_order_by_airlink_and_phone_number(
+        payload: CreateOrderByAirlinkAndPhoneNumberPayload = Depends(),
+        db: Session = Depends(get_db),
+        redis: Redis = Depends(get_redis_client)
+) -> dict[str, Any]:
+    """
+    Creates a Saleor checkout and an internal transaction record from an Airlink.
+    """
+
+    key = OrderIdempotencyKey(
+        phone_number=payload.phone_number,
+        internal_order_id=payload.airlink_id,
+    )
+    service = _build_order_idempotency_service(redis=redis, key=key)
+
+    async def _execute_order() -> dict[str, Any]:
+        try:
+            user = user_controller.get_or_create_with_phone(
+                db=db, phone_number=payload.phone_number, commit=True
+            )
+            if not user.customer_profile:
+                customer_controller.create_from_user(db=db, user=user, commit=True)
+
+            airlink = airlink_controller.get(db, id=payload.airlink_id)
+            order_service = CreateOrderByAirlinkService(
+                airlink=airlink,
+                saleor_service=ss,
+                customer_id=user.customer_profile.id,
+                customer_email=user.get_email_or_default,
+                saleor_channel_id=settings.LINK_SALEOR_CHANNEL_ID,
+            )
+            saleor_order_id = await order_service.create_order()
+            order_service.create_transaction(db=db, saleor_order_id=saleor_order_id)
+
+            response = CreateOrderByAirlinkAndPhoneNumberResponse(
+                code=status.HTTP_200_OK,
+                message="success",
+                order_id=saleor_order_id,
+            )
+        except Exception as err:
+            db.rollback()
+            # logger.error(...)
+            code = (
+                err.status_code
+                if isinstance(err, HTTPException)
+                else status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+            response = CreateOrderByAirlinkAndPhoneNumberResponse(
+                code=code,
+                message="error",
+                order_id=None,
+            )
+
+        return response.model_dump()
+
+    result = await service.execute(
+        key=key,
+        operation=_execute_order,
+    )
+    return result

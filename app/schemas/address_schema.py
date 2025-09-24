@@ -65,7 +65,7 @@ class AddressCustomerInputSchema(BaseModel):
     @staticmethod
     def from_db_model(db_model: Address):
         return AddressCustomerInputSchema(
-            name=db_model.name in db_model,
+            name=db_model.name,
             address_line_1=db_model.address_line_1,
             address_line_2=db_model.address_line_2,
             address_line_3=db_model.address_line_3,

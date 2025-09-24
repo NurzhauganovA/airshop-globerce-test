@@ -1,6 +1,7 @@
 # app/models/internal_models.py
 
 import datetime
+import enum
 import uuid
 
 from sqlalchemy import (
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Table,
     Text,
     UUID,
+    Enum as SQLEnum,
 )
 from sqlalchemy.dialects.postgresql import INT4RANGE
 from sqlalchemy.orm import relationship
@@ -25,6 +27,12 @@ from app.core.database import Base
 from app.models.category_models import MerchantCategory
 from app.models.cms_models import MerchantSite
 from app.models.warehouse_models import MerchantShippingZone
+
+
+class OrderConfirmationStatus(str, enum.Enum):
+    NEW = "NEW"
+    REQUESTED = "REQUESTED"
+    CONFIRMED = "CONFIRMED"
 
 
 # Many-to-many association table for Merchant and User (MerchantEmployee)
@@ -66,11 +74,11 @@ class User(Base):
     is_merchant = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
     is_technical = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     updated_at = Column(
         DateTime,
-        default=datetime.datetime.now(datetime.timezone.utc),
-        onupdate=datetime.datetime.now(datetime.timezone.utc),
+        default=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+        onupdate=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
     )
 
     # Relationship to Merchant through the association table
@@ -89,6 +97,12 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
+
+    @property
+    def get_email_or_default(self):
+        return (
+                self.email or f"user-{self.id}@airshop.saleor.local"
+        )
 
 
 class Merchant(Base):
@@ -120,11 +134,11 @@ class Merchant(Base):
     registration_date = Column(DateTime, nullable=True)
 
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None))
     updated_at = Column(
         DateTime,
-        default=datetime.datetime.now(datetime.timezone.utc),
-        onupdate=datetime.datetime.now(datetime.timezone.utc),
+        default=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
+        onupdate=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None),
     )
 
     # Relationship to User (MerchantEmployee) through the association table
@@ -148,6 +162,11 @@ class Merchant(Base):
 
     merchant_shipping_zones = relationship(
         "MerchantShippingZone", back_populates="merchant", cascade="all, delete-orphan"
+    )
+    order_confirmations = relationship(
+        "OrderConfirmation",
+        back_populates="merchant",
+        cascade="all, delete-orphan",
     )
 
 
@@ -175,6 +194,11 @@ class Customer(Base):
         "Address",
         secondary=customer_delivery_address_association,
         back_populates="delivery_for_customers",
+    )
+    order_confirmations = relationship(
+        "OrderConfirmation",
+        back_populates="customer",
+        cascade="all, delete-orphan",
     )
 
 
@@ -460,3 +484,21 @@ class EmployeeProfile(Base):
     user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
 
     user = relationship("User", back_populates="employee_profile")
+
+
+class OrderConfirmation(Base):
+    __tablename__ = "order_confirmations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+
+    saleor_order_id = Column(String(64), nullable=False, index=True)
+    customer_id = Column(String(64), ForeignKey("customers.id"), nullable=False, index=True)
+    merchant_id = Column(String(64), ForeignKey("merchants.id"), nullable=False, index=True)
+
+    status = Column(SQLEnum(OrderConfirmationStatus), nullable=False, default=OrderConfirmationStatus.NEW)
+
+    confirmation_code = Column(Integer, nullable=True)
+    confirmation_trials = Column(Integer, nullable=True, default=0)
+
+    customer = relationship("Customer", back_populates="order_confirmations")
+    merchant = relationship("Merchant", back_populates="order_confirmations")

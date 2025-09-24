@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import (
     Depends,
@@ -35,7 +35,7 @@ from app.controllers.merchant_controller import (
     get_merchant_shipping_zone_by_id,
     get_merchant_warehouse_by_id,
     create_db_merchant_warehouse,
-    list_merchant_warehouses, list_orders_for_merchant_with_transactions, enrich_orders_with_customers,
+    list_merchant_warehouses, get_employees_query_for_merchant,
 )
 from app.controllers.merchant_site_controller import merchant_site_controller
 from app.core import security
@@ -47,10 +47,10 @@ from app.graphql.generated_client import (
     ChannelUpdateInput,
     ShippingMethodChannelListingAddInput,
     WarehouseUpdateInput,
-    StockInput, OrderFilterInput,
+    StockInput,
 )
 from app.graphql.generated_client.client import CategoryWhereInput, WarehouseFilterInput
-from app.models.internal_model import User, Airlink
+from app.models.internal_model import User, Airlink, Merchant
 from app.pagination.cursor_pagination import (
     CursorPageWithOutTotal,
     CursorParamsWithOutTotal,
@@ -80,7 +80,7 @@ from app.schemas.merchant_site_shemas import (
 from app.schemas.order_schemas import (
     SaleorOrdersListSchema,
     MerchantPaymentMethodSchema,
-    MerchantPaymentMethodPaginatedResponse, SaleorOrderSchema,
+    MerchantPaymentMethodPaginatedResponse,
 )
 from app.schemas.product_schemas import (
     CreateProductRequestSchema,
@@ -1203,77 +1203,10 @@ async def create_warehouse_stock(
     return create_stock_response.product_variant_stocks_create.bulk_stock_errors
 
 
-@router.get("/orders", response_model=CursorPageWithOutTotal[SaleorOrderSchema])
-async def list_orders_for_merchant(
-    current_user: User = Depends(security.get_current_user),
-    db: Session = Depends(get_db),
-    params: CursorParamsWithOutTotal = Depends(),
-    first: Optional[int] = Query(
-        25, description="Returns the first n elements from the list."
-    ),
-    last: Optional[int] = Query(
-        None, description="Returns the last n elements from the list."
-    ),
-    after: Optional[str] = Query(
-        None,
-        description="Returns the elements in the list that come after the specified cursor.",
-    ),
-    before: Optional[str] = Query(
-        None,
-        description="Returns the elements in the list that come before the specified cursor.",
-    ),
-):
-    """
-    Получаем список заказов мерчанта с пагинацией.
-    Возвращает только заказы, у которых есть соответствующие транзакции в БД
-    """
-    if not current_user.is_merchant:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only merchants can view orders.",
-        )
+@router.get("/orders", response_model=SaleorOrdersListSchema)
+async def list_orders_for_merchant():
+    pass
 
-    if not current_user.merchants:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User is not associated with any merchant.",
-        )
-
-    merchant = current_user.merchants[0]
-    try:
-        order_filter = OrderFilterInput(metadata=[{"key": "merchant_id", "value": "6f183b52-2cbf-4961-9f5f-790a02e2eebc"}])
-
-        order_response = await saleor_service.client.get_order_list(
-            filter=order_filter,
-            first=first,
-            last=last,
-            after=after,
-            before=before
-        )
-
-        if not order_response.orders or not order_response.orders.edges:
-            return CursorPageWithOutTotal.create(items=[], params=params)
-
-        saleor_orders = [edge.node for edge in order_response.orders.edges]
-
-        filtered_orders = list_orders_for_merchant_with_transactions(
-            db=db,
-            merchant_id="6f183b52-2cbf-4961-9f5f-790a02e2eebc",
-            saleor_orders=saleor_orders
-        )
-        enriched_orders = enrich_orders_with_customers(
-            db=db,
-            merchant_id="6f183b52-2cbf-4961-9f5f-790a02e2eebc",
-            saleor_orders=filtered_orders
-        )
-
-        return CursorPageWithOutTotal.create(items=enriched_orders, params=params)
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch orders: {str(e)}",
-        )
 
 @router.get("/payment-methods", response_model=MerchantPaymentMethodPaginatedResponse)
 async def list_payment_methods_for_merchant():
@@ -1287,17 +1220,32 @@ async def update_payment_method():
     pass
 
 
-@router.get("/employees", response_model=EmployeeListSchema)
+def transform_users_to_employee_schema(users: List[User]) -> List[BaseEmployeeSchema]:
+    return [BaseEmployeeSchema.from_model(user) for user in users]
+
+
+@router.get("/employees", response_model=CursorPageWithOutTotal[BaseEmployeeSchema])
 async def list_employees_for_merchant(
-    current_user: User = Depends(security.get_current_user),
+        db: Session = Depends(get_db),
+        current_user: User = Depends(security.get_current_user),
+        params: CursorParamsWithOutTotal = Depends(),
 ):
     if not current_user.is_merchant:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only merchants can read employees.",
         )
+    if not current_user.merchants:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any merchant",
+        )
 
-    return EmployeeListSchema.from_models(current_user.merchants[0].employees)
+    merchant = current_user.merchants[0]
+    query = get_employees_query_for_merchant(
+        db, merchant=merchant
+    )
+    return paginate(db, query, params, transformer=transform_users_to_employee_schema)
 
 
 @router.get("/employees/{employee_id}", response_model=BaseEmployeeSchema)
@@ -1332,7 +1280,7 @@ async def create_employee(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only merchants can add employees.",
         )
-    new_user = user_controller.create_with_phone(db=db, phone_number=request.phone)
+    new_user = user_controller.get_or_create_with_phone(db=db, phone_number=request.phone)
     new_user.is_merchant = True
     db.add(new_user)
     db.flush()
@@ -1501,21 +1449,7 @@ async def create_merchant_site(
     merchant_site = merchant_site_controller.create_merchant_site(
         db=db, site=request, merchant_id=merchant.id
     )
-    return MerchantSiteSchema(
-        id=merchant_site.id,
-        site_preffix=merchant_site.site_preffix,
-        site_suffix=merchant_site.site_suffix,
-        is_active=merchant_site.is_active,
-        site_carousel_items=[
-            MerchantSiteCarouselItemSchema(
-                id=item.id,
-                url=item.url,
-                is_active=item.is_active,
-                order=item.order,
-            )
-            for item in merchant_site.merchant_site_carousel_items
-        ],
-    )
+    return merchant_site_controller.serialize_merchant_site(merchant_site)
 
 
 @router.patch("/merchant-site", response_model=MerchantSiteSchema)
@@ -1565,21 +1499,7 @@ async def update_merchant_site(
         ),
         site_id=merchant_site_db.id,
     )
-    return MerchantSiteSchema(
-        id=merchant_site.id,
-        site_preffix=merchant_site.site_preffix,
-        site_suffix=merchant_site.site_suffix,
-        is_active=merchant_site.is_active,
-        site_carousel_items=[
-            MerchantSiteCarouselItemSchema(
-                id=item.id,
-                url=item.url,
-                is_active=item.is_active,
-                order=item.order,
-            )
-            for item in merchant_site.merchant_site_carousel_items
-        ],
-    )
+    return merchant_site_controller.serialize_merchant_site(merchant_site)
 
 
 @router.get("/merchant-site", response_model=MerchantSiteSchema)
@@ -1607,21 +1527,7 @@ async def get_merchant_site(
     merchant_site = merchant_site_controller.get_site_by_merchant_id(
         db=db, merchant_id=merchant.id
     )
-    return MerchantSiteSchema(
-        id=merchant_site.id,
-        site_preffix=merchant_site.site_preffix,
-        site_suffix=merchant_site.site_suffix,
-        is_active=merchant_site.is_active,
-        site_carousel_items=[
-            MerchantSiteCarouselItemSchema(
-                id=item.id,
-                url=item.url,
-                is_active=item.is_active,
-                order=item.order,
-            )
-            for item in merchant_site.merchant_site_carousel_items
-        ],
-    )
+    return merchant_site_controller.serialize_merchant_site(merchant_site)
 
 
 @router.get("/shipping-zones", response_model=ShippingZonesModelListSchema)

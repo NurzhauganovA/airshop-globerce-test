@@ -10,6 +10,9 @@ from app.controllers.base import BaseController
 from app.core import security
 from app.models.internal_model import Customer, User, Address, City, Country
 from app.schemas.auth_schemas import OTPSendRequest
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+
 
 
 class UserController(BaseController[User, OTPSendRequest, OTPSendRequest]):
@@ -26,6 +29,14 @@ class UserController(BaseController[User, OTPSendRequest, OTPSendRequest]):
             .filter(self._model.phone_number == phone_number)
             .first()
         )
+    
+    async def get_by_phone_async(self, db: AsyncSession, *, phone_number: str) -> Optional[User]:
+        """
+        Retrieves a user by their unique phone number.
+        """
+        data = await db.execute(select(self._model).filter(self._model.phone_number == phone_number))
+
+        return data.scalars().first()
 
     def get_by_username(self, db: Session, *, username: str) -> Optional[User]:
         """
@@ -45,22 +56,48 @@ class UserController(BaseController[User, OTPSendRequest, OTPSendRequest]):
             .first()
         )
 
-    def create_with_phone(
-        self, db: Session, *, phone_number: str, **extra_fields
+    def get_or_create_with_phone(
+        self, db: Session, *, phone_number: str, commit: bool = False, **extra_fields
     ) -> User:
         """
-        Creates a new user with a phone number.
+        Creates a new user with a phone number or get existing.
         A dummy password is created as it's a required field.
         This method does NOT commit the session.
         """
+        user = self.get_by_phone(db, phone_number=phone_number)
+        if user:
+            return user
+
         dummy_password_hash = security.get_password_hash(str(uuid.uuid4()))
-        db_user = User(
+        db_user = self._model(
             phone_number=phone_number, password_hash=dummy_password_hash, **extra_fields
         )
         db.add(db_user)
         db.flush()  # Ensure the object has an ID before refreshing
+        if commit:
+            db.commit()
         db.refresh(db_user)
         return db_user
+    
+    async def get_or_create_with_phone_async(self, db:AsyncSession, *, phone_number: str, commit: bool = False, **extra_fields) -> User:
+
+        user = await self.get_by_phone_async(db, phone_number=phone_number)
+        if user:
+            return user
+        dummy_password_hash = security.get_password_hash(str(uuid.uuid4()))
+        db_user = self._model(
+            phone_number=phone_number, password_hash=dummy_password_hash, **extra_fields
+        )
+        db.add(db_user)
+        await db.flush()  # Ensure the object has an ID before refreshing
+        if commit:
+            await db.commit()
+        await db.refresh(db_user)
+        return db_user
+
+
+
+
 
 
 # Instantiate the controller classes to be used in your API endpoints
@@ -72,7 +109,7 @@ class CustomerController(BaseController[Customer, OTPSendRequest, OTPSendRequest
     Controller for handling Customer model operations.
     """
 
-    def create_from_user(self, db: Session, *, user: User) -> Customer:
+    def create_from_user(self, db: Session, *, user: User, commit: bool = False) -> Customer:
         """
         Creates a new Customer profile linked to an existing User.
         This method does NOT commit the session.
@@ -80,6 +117,9 @@ class CustomerController(BaseController[Customer, OTPSendRequest, OTPSendRequest
         # Create a new Customer profile and link it to the user.
         db_customer = Customer(user_id=user.id)
         db.add(db_customer)
+        if commit:
+            db.commit()
+            db.refresh(user)
         return db_customer
 
     def get_by_customer_id(

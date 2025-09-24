@@ -7,7 +7,7 @@ from fastapi_pagination.ext.sqlalchemy import paginate
 from sqlalchemy.orm import Session
 
 from app.controllers import transactions_controller
-from app.controllers.airlink_controller import AirlinkController
+from app.controllers.airlink_controller import airlink_controller
 from app.controllers.internal import (
     customer_controller,
     country_controller,
@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.graphql.generated_client import CheckoutLineInput
 from app.graphql.generated_client.client import ProductWhereInput
+from app.models.cms_models import MerchantSite
 from app.models.internal_model import Airlink
 from app.models.internal_model import User, Merchant
 from app.pagination.cursor_pagination import (
@@ -52,6 +53,7 @@ from app.schemas.cart_schema import (
 from app.schemas.category_schemas import CategoryListSchema
 from app.schemas.integrations import MerchantOnboardResponse
 from app.schemas.loanrequest_schemas import SetOfferRequest
+from app.schemas.merchant_site_shemas import MerchantSiteSchema, MerchantSiteCarouselItemSchema
 from app.schemas.order_schemas import (
     BasePaymentMethodSchema,
     MerchantPaymentMethodSchema,
@@ -68,6 +70,7 @@ from app.schemas.product_schemas import (
     ProductShortSchma,
     ProductFullSchema,
 )
+from app.services.airlink.create_order import CreateOrderByAirlinkService
 from app.services.mfo.freedom_mfo import (
     FreedomMfoService,
     SendOTPRequest,
@@ -91,18 +94,16 @@ ss = SaleorService(
     saleor_api_token=settings.SALEOR_API_TOKEN,
 )
 
-airlink_controller = AirlinkController(Airlink)
-
 # We'll use a router for each major group of endpoints
 router = APIRouter()
 
 
-async def get_merchant_from_site_domain(
+async def _get_site_from_domain(
     x_customer_site_domain: str = Header(..., alias="X-CUSTOMER-SITE-DOMAIN"),
     db: Session = Depends(get_db),
-) -> Merchant:
+) -> MerchantSite:
     """
-    Dependency to get a Merchant from the X-CUSTOMER-SITE-DOMAIN header.
+    Internal function to get site from domain
     """
     site = merchant_site_controller.get_site_by_preffix(
         db, preffix=x_customer_site_domain
@@ -112,12 +113,30 @@ async def get_merchant_from_site_domain(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Site with domain '{x_customer_site_domain}' not found.",
         )
+    return site
+
+
+async def get_merchant_from_site_domain(
+    site: MerchantSite = Depends(_get_site_from_domain),
+) -> Merchant:
+    """
+    Dependency to get a Merchant from the X-CUSTOMER-SITE-DOMAIN header.
+    """
     if not site.merchant:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No merchant associated with site '{x_customer_site_domain}'.",
+            detail=f"No merchant associated with site '{site.domain}'.",
         )
     return site.merchant
+
+
+async def get_merchant_site_from_site_domain(
+    site: MerchantSite = Depends(_get_site_from_domain),
+) -> MerchantSite:
+    """
+    Dependency to get a MerchantSite from the X-CUSTOMER-SITE-DOMAIN header.
+    """
+    return site
 
 
 @router.get(
@@ -238,147 +257,19 @@ async def create_order_from_airlink(
             detail="User does not have a customer profile.",
         )
 
-    customer_email = (
-        current_user.email or f"user-{current_user.id}@airshop.saleor.local"
+    airlink = airlink_controller.get(db, id=airlink_id)
+    airlink_create_order_service = CreateOrderByAirlinkService(
+        airlink=airlink,
+        saleor_service=ss,
+        payment_method_id=request.payment_method_id,
+        customer_id=current_user.customer_profile.id,
+        customer_email=current_user.get_email_or_default,
+        saleor_channel_id=settings.LINK_SALEOR_CHANNEL_ID
     )
 
-    # 2. Get and validate Airlink
-    airlink = airlink_controller.get_airlink_by_id(db, airlink_id)
-    if not airlink:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Airlink not found"
-        )
-    if not airlink.published:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Airlink is not published."
-        )
+    saleor_order_id = await airlink_create_order_service.create_order()
+    airlink_create_order_service.create_transaction(db=db, saleor_order_id=saleor_order_id)
 
-    now = datetime.now(
-        timezone.utc
-    )  # can't compare offset-naive and offset-aware datetimes
-    if airlink.date_start and now < airlink.date_start.replace(tzinfo=timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Airlink is not active yet."
-        )
-    if airlink.date_end and now > airlink.date_end.replace(tzinfo=timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Airlink has expired."
-        )
-
-    if not airlink.checkout_items:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Airlink has no items to order.",
-        )
-
-    if len(airlink.checkout_items) > 1:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Ordering from an Airlink with multiple items is not yet supported.",
-        )
-    checkout_item = airlink.checkout_items[0]
-
-    # 3. Validate payment method
-    merchant = airlink.merchant
-    if not merchant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Merchant not found for this Airlink",
-        )
-
-    valid_payment_method_ids = {
-        mpm.id for mpm in merchant.merchant_payment_methods if mpm.active
-    }
-    if request.payment_method_id not in valid_payment_method_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid payment method for this merchant.",
-        )
-
-    # 4. Get channel slug
-    channel_response = await ss.client.get_channel_by_id(
-        settings.LINK_SALEOR_CHANNEL_ID
-    )
-    if not channel_response.channel or not channel_response.channel.slug:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not resolve Saleor channel.",
-        )
-    channel_slug = channel_response.channel.slug
-
-    # 5. Create checkout and then order in Saleor
-    try:
-        checkout_response = await ss.client.create_checkout_from_airlink(
-            variant_id=checkout_item.saleor_variant_id,
-            price=airlink.planned_price,
-            customer_id=current_user.customer_profile.id,
-            airlink_id=airlink.id,
-            channel_slug=channel_slug,
-            email=customer_email,
-        )
-        checkout_create_result = checkout_response.checkout_create
-        if checkout_create_result.checkout_errors or checkout_create_result.errors:
-            errors = (
-                checkout_create_result.checkout_errors + checkout_create_result.errors
-            )
-            error_messages = [e.message for e in errors if e.message]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Could not create checkout in Saleor: {'; '.join(error_messages)}",
-            )
-        if (
-            not checkout_create_result.checkout
-            or not checkout_create_result.checkout.id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Saleor created a checkout but did not return an ID.",
-            )
-        saleor_checkout_id = checkout_create_result.checkout.id
-
-        # Create order from the checkout
-        order_response = await ss.client.create_order_from_saleor_checkout(
-            checkout_id=saleor_checkout_id,
-            merchant_id=airlink.merchant_id,
-        )
-
-        order_create_result = order_response.order_create_from_checkout
-        if order_create_result.errors:
-            error_messages = [
-                e.message for e in order_create_result.errors if e.message
-            ]
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Could not create order from checkout in Saleor: {'; '.join(error_messages)}",
-            )
-
-        if not order_create_result.order or not order_create_result.order.id:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Saleor created an order but did not return an ID.",
-            )
-
-        saleor_order_id = order_create_result.order.id
-
-    except HTTPException as e:
-        raise e  # Re-raise HTTPExceptions to preserve status code and detail
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred during Saleor order creation: {e}",
-        )
-
-    # 6. Create internal transaction record (acting as our 'order')
-    new_transaction = transactions_controller.create_transaction(
-        db=db, saleor_order_id=saleor_order_id, amount=airlink.planned_price
-    )
-
-    # 7. Set the chosen payment method for the transaction
-    transactions_controller.set_transaction_payment_type(
-        db=db, transaction=new_transaction, payment_method_id=request.payment_method_id
-    )
-
-    # 8. Return the ID of our internal transaction/order
     return {"order_id": saleor_order_id}
 
 
@@ -808,6 +699,13 @@ async def change_offer(
     return loan_request
 
 
+@router.get("/customer/merchant-site", response_model=MerchantSiteSchema)
+async def get_merchant_site(
+    merchant_site: MerchantSite = Depends(get_merchant_site_from_site_domain),
+):
+    return merchant_site_controller.serialize_merchant_site(merchant_site)
+
+
 @router.get("/customer/products", response_model=PaginatedProductsResponse)
 async def get_products_by_merchant(
     first: Optional[int] = Query(
@@ -826,12 +724,6 @@ async def get_products_by_merchant(
     ),
     merchant: Merchant = Depends(get_merchant_from_site_domain),
 ):
-    if not merchant:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Merchant not found.",
-        )
-
     where = ProductWhereInput(
         metadata=[
             {

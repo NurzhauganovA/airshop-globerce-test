@@ -182,3 +182,20 @@ class AirlinkPatchRequestRequest(BaseModel):
     date_start: Optional[datetime] = None
     date_end: Optional[datetime] = None
     planned_price: Optional[Decimal] = None
+
+
+class CreateOrderByAirlinkAndPhoneNumberPayload(BaseModel):
+    phone_number: str = Field(
+        ...,
+        min_length=10,
+        max_length=15,
+        description="The user's phone number.",
+        examples=["+1234567890"],
+    )
+    airlink_id: str
+
+
+class CreateOrderByAirlinkAndPhoneNumberResponse(BaseModel):
+    code: int
+    message: str
+    order_id: str | None = None

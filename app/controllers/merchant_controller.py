@@ -3,10 +3,10 @@
 from typing import List
 
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
-from app.graphql.generated_client import GetOrderByIDOrder
-from app.mappers.merchant_mapper import map_merchant_to_onboard_request
 from app.models.internal_model import (
     Address,
     BasePaymentMethod,
@@ -15,16 +15,11 @@ from app.models.internal_model import (
     MerchantPaymentMethod,
     MFOConfig,
     Airlink,
-    EmployeeProfile, User, Customer,
+    EmployeeProfile, User,
 )
-from app.models.transaction_models import Transaction
-from app.schemas.customer_schemas import CustomerBaseSchema
-from app.schemas.integrations import MerchantAddressCreate, MerchantOnboardRequest, MerchantOnboardRequestEmployee, \
-    MerchantSchema
+from app.schemas.integrations import MerchantAddressCreate
 from app.models.category_models import MerchantCategory
 from app.models.warehouse_models import MerchantShippingZone, MerchantWarehouse
-from app.schemas.merchant_site_shemas import MerchantSiteSchema
-from app.schemas.order_schemas import SaleorOrderSchema
 
 
 def get_by_bin(db: Session, *, bin: str) -> Merchant | None:
@@ -32,6 +27,16 @@ def get_by_bin(db: Session, *, bin: str) -> Merchant | None:
     Get a merchant by Business Identification Number (BIN).
     """
     return db.query(Merchant).filter(Merchant.bin == bin).first()
+
+async def get_by_bin_async(db: AsyncSession, *, bin: str) -> Merchant | None:
+    """
+    Get a merchant by Business Identification Number (BIN).
+    """
+    result = await db.execute(select(Merchant).filter(Merchant.bin == bin))
+    return result.scalars().first()
+
+
+
 
 
 def create_merchant(db: Session, *, merchant: Merchant):
@@ -48,6 +53,23 @@ def create_merchant(db: Session, *, merchant: Merchant):
     db.flush()
     db.refresh(merchant)
     return merchant
+
+async def create_merchant_async(db: AsyncSession, *, merchant: Merchant):
+    """
+    Create merchant's employees. Add some other
+    """
+    if await get_by_bin_async(db=db, bin=merchant.bin):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A merchant with this BIN already exists.",
+        )
+    
+    db.add(merchant)
+    await db.flush()
+    await db.refresh(merchant)
+    return merchant
+
+
 
 
 def add_address_to_merchant(
@@ -96,6 +118,23 @@ def setup_default_payment_methods(
     db.flush()
     return merchant_payment_methods
 
+async def setup_default_payment_methods_async(
+        db: AsyncSession, *, merchant: Merchant
+) -> List[MerchantPaymentMethod]:
+    enabled_base_methods_results = (
+        await db.execute(select(BasePaymentMethod).filter(BasePaymentMethod.enabled.is_(True)))
+    )
+    enabled_base_methods = enabled_base_methods_results.scalars().all()
+    merchant_payment_methods = []
+    for base_method in enabled_base_methods:
+        merchant_payment_method = MerchantPaymentMethod(
+            base_payment_method_id=base_method.id, merchant_id=merchant.id, active=True
+        )
+        db.add(merchant_payment_method)
+        merchant_payment_methods.append(merchant_payment_method)
+
+    await db.flush()
+    return merchant_payment_methods
 
 def add_category_to_merchant(
     db: Session, *, merchant: Merchant, category_id: str
@@ -327,6 +366,25 @@ def get_airlinks_by_merchant_bin(
     )
 
 
+def get_employees_query_for_merchant(
+    db: Session, *, merchant: Merchant
+) -> Query:
+    """Returns a query for employees associated with the given merchant."""
+    return (
+        db.query(User)
+        .join(User.merchants)
+        .filter(Merchant.id == merchant.id)
+        .order_by(User.id)
+    )
+
+
+def get_employees_for_merchant(
+    db: Session, *, merchant: Merchant
+) -> List[User]:
+    """Returns a list of employees associated with the given merchant."""
+    return get_employees_query_for_merchant(db, merchant=merchant).all()
+
+
 def create_employee_for_merchant(
     db: Session, *, merchant: Merchant, employee: EmployeeProfile
 ) -> EmployeeProfile:
@@ -347,85 +405,26 @@ def create_employee_for_merchant(
 
     return db_employee
 
+async def create_employee_for_merchant_async(
+        db: AsyncSession, *, merchant: Merchant, employee: EmployeeProfile
+) -> EmployeeProfile:
+    db_employee = employee
+    db.add(db_employee)
+    await db.flush()
+    await db.refresh(db_employee)
 
-def get_orders_with_transactions(
-    saleor_order_ids: List[str],
-    db: Session,
-) -> List[str]:
-    """
-    Получает список заказов Saleor, у которых есть транзакции
-    """
-    if not saleor_order_ids:
-        return []
-    print("SALEOR ORDER IDS", saleor_order_ids)
+    user = await db.get(User, db_employee.user_id)
+    if not user:
+        raise ValueError(f"User with id {db_employee.user_id} not found for employee profile.")
 
-    transactions = (
-        db.query(Transaction).filter(Transaction.saleor_order_id.in_(saleor_order_ids))
-        .with_entities(Transaction.saleor_order_id)
-        .distinct()
-        .all()
-    )
-    return [t.saleor_order_id for t in transactions]
+    # To prevent a lazy load on the `merchant.employees` collection, which
+    # would cause a MissingGreenlet error in an async context, we need to
+    # eagerly load it. We can do this by refreshing the merchant instance
+    # and specifying the relationship to load.
+    await db.refresh(merchant, attribute_names=["employees"])
 
+    merchant.employees.append(user)
+    db.add(merchant)
+    await db.flush()
 
-def list_orders_for_merchant_with_transactions(
-    db: Session,
-    merchant_id: str,
-    saleor_orders: List
-) -> List[SaleorOrderSchema]:
-    """
-    Фильтрует заказы Saleor и возвращает только те, у которых есть транзакции
-    """
-    if not saleor_orders:
-        return []
-
-    merchant = get_merchant_by_id(db, merchant_id=merchant_id)
-    if not merchant:
-        return []
-
-    saleor_order_ids = [order.id for order in saleor_orders]
-
-    orders_with_transactions = get_orders_with_transactions(saleor_order_ids, db)
-    print("ORDERS WITH TRANSACTIONS", orders_with_transactions)
-    if not orders_with_transactions:
-        return []
-
-    filtered_orders = [
-        order for order in saleor_orders
-        if order.id in orders_with_transactions
-    ]
-
-    return filtered_orders
-
-
-def enrich_orders_with_customers(
-    db: Session,
-    merchant_id: str,
-    saleor_orders: list
-) -> list[SaleorOrderSchema]:
-    """Добавляет информацию о покупателях в заказы"""
-    merchant = get_merchant_by_id(db, merchant_id=merchant_id)
-    merchant_schema = map_merchant_to_onboard_request(merchant)
-
-    result = []
-    print("SALEOR ORDERS", saleor_orders)
-    for order in saleor_orders:
-        # ищем customer_id в метаданных заказа
-        customer_id = next(
-            (m.value for m in order.metadata if m.key == "customer_id"), None
-        )
-        customer_schema = None
-        if customer_id:
-            customer = db.query(Customer).filter(Customer.id == customer_id).first()
-            if customer:
-                customer_schema = CustomerBaseSchema.model_validate(customer.__dict__)
-
-        result.append(
-            SaleorOrderSchema(
-                order=order,
-                customer=customer_schema,
-                merchant=merchant_schema
-            )
-        )
-
-    return result
+    return db_employee
