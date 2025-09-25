@@ -35,9 +35,13 @@ from app.controllers.merchant_controller import (
     get_merchant_shipping_zone_by_id,
     get_merchant_warehouse_by_id,
     create_db_merchant_warehouse,
-    list_merchant_warehouses, get_employees_query_for_merchant,
+    list_merchant_warehouses,
+    list_orders_for_merchant_with_transactions,
+    enrich_orders_with_customers,
+    get_employees_query_for_merchant
 )
 from app.controllers.merchant_site_controller import merchant_site_controller
+from app.controllers.transactions_controller import request_confirmation as request_order_confirmation
 from app.core import security
 from app.core.config import settings
 from app.core.s3_client import s3_client
@@ -47,7 +51,7 @@ from app.graphql.generated_client import (
     ChannelUpdateInput,
     ShippingMethodChannelListingAddInput,
     WarehouseUpdateInput,
-    StockInput,
+    StockInput, OrderFilterInput,
 )
 from app.graphql.generated_client.client import CategoryWhereInput, WarehouseFilterInput
 from app.models.internal_model import User, Airlink, Merchant
@@ -80,7 +84,9 @@ from app.schemas.merchant_site_shemas import (
 from app.schemas.order_schemas import (
     SaleorOrdersListSchema,
     MerchantPaymentMethodSchema,
-    MerchantPaymentMethodPaginatedResponse,
+    MerchantPaymentMethodPaginatedResponse, 
+    SaleorOrderSchema,
+    OrderConfirmationResponse,
 )
 from app.schemas.product_schemas import (
     CreateProductRequestSchema,
@@ -1203,9 +1209,115 @@ async def create_warehouse_stock(
     return create_stock_response.product_variant_stocks_create.bulk_stock_errors
 
 
-@router.get("/orders", response_model=SaleorOrdersListSchema)
-async def list_orders_for_merchant():
-    pass
+@router.get("/orders", response_model=CursorPageWithOutTotal[SaleorOrderSchema])
+async def list_orders_for_merchant(
+    current_user: User = Depends(security.get_current_user),
+    db: Session = Depends(get_db),
+    params: CursorParamsWithOutTotal = Depends(),
+    first: Optional[int] = Query(
+        25, description="Returns the first n elements from the list."
+    ),
+    last: Optional[int] = Query(
+        None, description="Returns the last n elements from the list."
+    ),
+    after: Optional[str] = Query(
+        None,
+        description="Returns the elements in the list that come after the specified cursor.",
+    ),
+    before: Optional[str] = Query(
+        None,
+        description="Returns the elements in the list that come before the specified cursor.",
+    ),
+):
+    """
+    Получаем список заказов мерчанта с пагинацией.
+    Возвращает только заказы, у которых есть соответствующие транзакции в БД
+    """
+    if not current_user.is_merchant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only merchants can view orders.",
+        )
+
+    if not current_user.merchants:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any merchant.",
+        )
+
+    merchant = current_user.merchants[0]
+    try:
+        order_filter = OrderFilterInput(metadata=[{"key": "merchant_id", "value": merchant.id}])
+
+        order_response = await saleor_service.client.get_order_list(
+            filter=order_filter,
+            first=first,
+            last=last,
+            after=after,
+            before=before
+        )
+
+        if not order_response.orders or not order_response.orders.edges:
+            return CursorPageWithOutTotal.create(items=[], params=params)
+
+        saleor_orders = [edge.node for edge in order_response.orders.edges]
+
+        filtered_orders = list_orders_for_merchant_with_transactions(
+            db=db,
+            merchant_id=merchant.id,
+            saleor_orders=saleor_orders
+        )
+        enriched_orders = enrich_orders_with_customers(
+            db=db,
+            merchant_id=merchant.id,
+            saleor_orders=filtered_orders
+        )
+
+        return CursorPageWithOutTotal.create(items=enriched_orders, params=params)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch orders: {str(e)}",
+        )
+    
+    
+@router.post(
+    "/orders/{order_id}/request-confirmation",
+    response_model=OrderConfirmationResponse,
+)
+async def request_confirmation(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(security.get_current_user),
+):
+
+    if not current_user.is_merchant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only merchants can request order confirmation.",
+        )
+    if not current_user.merchants:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with any merchant.",
+        )
+
+    merchant_id = current_user.merchants[0].id
+
+    oc = await request_order_confirmation(
+        db=db,
+        order_id=order_id,
+        merchant_id=merchant_id,
+        saleor_service=saleor_service,
+    )
+
+    return OrderConfirmationResponse(
+        id=str(oc.id),
+        saleor_order_id=str(oc.saleor_order_id),
+        status=str(getattr(oc.status, "value", oc.status)),
+        confirmation_trials=int(oc.confirmation_trials or 0),
+    )
 
 
 @router.get("/payment-methods", response_model=MerchantPaymentMethodPaginatedResponse)

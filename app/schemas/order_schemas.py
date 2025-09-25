@@ -7,10 +7,9 @@
 # order by airlink / process-payment / get-offers
 # order by airlink / process-payment / offer post
 # order by airlink / process-payment / offer patch
-
-
+from prompt_toolkit.contrib.regular_languages.regex_parser import AnyNode
 from pydantic import BaseModel, HttpUrl
-from typing import Optional
+from typing import Optional, Any, List
 from app.schemas.airlink_schemas import AirlinkResponseSchema
 from app.schemas.integrations import MerchantOnboardResponse
 from app.graphql.generated_client.get_order_by_id import GetOrderByIDOrder
@@ -29,7 +28,7 @@ class BasePaymentMethodSchema(BaseModel):
 
 class MerchantPaymentMethodSchema(BaseModel):
     id: str
-    merchant: MerchantOnboardResponse = None  # Nested merchant details
+    merchant: Any = None  # Nested merchant details
     active: bool
     base_method: Optional[BasePaymentMethodSchema] = None  # Nested base method details
 
@@ -43,7 +42,7 @@ class OrderByAirlinkResponse(BaseModel):
     """
 
     airlink: AirlinkResponseSchema
-    merchant: MerchantOnboardResponse
+    merchant: Any
     availablePaymentOptions: list[MerchantPaymentMethodSchema]
 
 
@@ -111,7 +110,7 @@ class OrderProcessPaymentResponse(BaseModel):
 
 
 class SaleorOrderSchema(BaseModel):
-    order: GetOrderByIDOrder
+    order: Any
     customer: CustomerBaseSchema
     merchant: MerchantOnboardRequest
 
@@ -122,3 +121,10 @@ class SaleorOrdersListSchema(BaseModel):
 
 class MerchantPaymentMethodPaginatedResponse(PaginatedResponse):
     items: list[MerchantPaymentMethodSchema]
+
+
+class OrderConfirmationResponse(BaseModel):
+    id: str
+    saleor_order_id: str
+    status: str
+    confirmation_trials: int

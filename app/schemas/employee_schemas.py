@@ -74,7 +74,7 @@ class EmployeeListSchema(BaseModel):
 
 
 class EmployeeSimpleAddSchema(BaseModel):
-    phone: str = Field(..., pattern=r"^7[0-9]{10}$")
+    phone_number: str = Field(..., pattern=r"^7[0-9]{10}$")
     first_name: str
     last_name: str
     email: Optional[str] = None

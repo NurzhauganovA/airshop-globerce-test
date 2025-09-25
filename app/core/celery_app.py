@@ -16,3 +16,10 @@ celery_app = Celery(
 celery_app.conf.update(
     task_track_started=True,
 )
+
+celery_app.conf.beat_schedule = {
+    "cancel_expired_freedom_p2p_orders": {
+        "task": "app.worker.cancel_expired_freedom_p2p_orders",
+        "schedule": 1800.0,  # every 30 minutes,
+    }
+}

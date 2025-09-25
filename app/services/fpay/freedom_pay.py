@@ -180,7 +180,7 @@ class FreedomPayService:
             decrypted = RSADecryption.decrypt(data.secret_key)
             data = data.to_form_data()
             generate_signature(
-                request=data, path=pay_path, secret_key=decrypted, test_mode=testMode
+                request=data, path="init_payment.php", secret_key=decrypted, test_mode=testMode
             )
 
             response = await self.client.post(pay_path, data=data)

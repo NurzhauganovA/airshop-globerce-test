@@ -58,6 +58,7 @@ from app.schemas.order_schemas import (
     BasePaymentMethodSchema,
     MerchantPaymentMethodSchema,
     OrderProcessPaymentResponse,
+    OrderConfirmationResponse,
 )
 from app.schemas.order_schemas import (
     OrderByAirlinkResponse,
@@ -193,11 +194,11 @@ async def preview_order_by_airlink(
     )
 
     # Convert merchant and payment methods to their respective schemas
-    merchant_response = MerchantOnboardResponse(
-        merchant_id=merchant.id,
-        legal_name=merchant.legal_name,
-        bin=merchant.bin,
-    )
+    merchant_response = {
+        "merchant_id": merchant.id,
+        "legal_name": merchant.legal_name,
+        "bin": merchant.bin,
+    }
 
     available_payment_options_response = []
     for mpm in available_payment_options:
@@ -261,6 +262,7 @@ async def create_order_from_airlink(
     airlink_create_order_service = CreateOrderByAirlinkService(
         airlink=airlink,
         saleor_service=ss,
+        user=current_user,
         payment_method_id=request.payment_method_id,
         customer_id=current_user.customer_profile.id,
         customer_email=current_user.get_email_or_default,

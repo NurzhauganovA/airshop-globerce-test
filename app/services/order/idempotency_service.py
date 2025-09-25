@@ -1,10 +1,44 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Callable, Protocol
 
 from redis.asyncio import Redis
 from redis.exceptions import LockError
+from starlette import status
+
+from app.controllers.airlink_controller import airlink_controller
+from app.controllers.internal import user_controller, customer_controller
+from app.core.config import settings
+from app.schemas.airlink_schemas import CreateOrderByAirlinkAndPhoneNumberResponse
+from app.services.airlink.create_order import CreateOrderByAirlinkService
+
+ORDER_RESPONSE_CACHE_PREFIX = "order:create:response:"
+ORDER_RESPONSE_CACHE_TTL_SECONDS = 60
+LOCK_TIMEOUT_SECONDS = 60
+LOCK_BLOCKING_TIMEOUT_SECONDS = 2
+LOCK_RETRY_DELAY_SECONDS = 0.1
+
+
+@dataclass
+class BaseIdempotencyKey:
+    def cache_key(self, prefix: str) -> str:
+        raise NotImplementedError
+
+    def lock_key(self) -> str:
+        raise NotImplementedError
+
+
+@dataclass
+class OrderIdempotencyKey(BaseIdempotencyKey):
+    phone_number: str
+    internal_order_id: str
+
+    def cache_key(self, prefix: str) -> str:
+        return f"{prefix}{self.phone_number}:{self.internal_order_id}"
+
+    def lock_key(self) -> str:
+        return f"order:idempotency:{self.phone_number}:{self.internal_order_id}"
 
 
 class AsyncJSONCache(Protocol):
@@ -30,18 +64,6 @@ class RedisJSONCache:
 
     async def set(self, key: str, value: dict, ttl_seconds: int) -> None:
         await self._redis.set(key, json.dumps(value), ex=ttl_seconds)
-
-
-@dataclass(frozen=True)
-class OrderIdempotencyKey:
-    phone_number: str
-    internal_order_id: str
-
-    def cache_key(self, prefix: str) -> str:
-        return f"{prefix}{self.phone_number}:{self.internal_order_id}"
-
-    def lock_key(self) -> str:
-        return f"order:idempotency:{self.phone_number}:{self.internal_order_id}"
 
 
 class RedisLockManager:
@@ -81,7 +103,7 @@ class RedisLockManager:
             self._acquired = False
 
 
-class OrderCreationIdempotencyService:
+class BaseIdempotencyService:
 
     def __init__(
             self,
@@ -99,8 +121,8 @@ class OrderCreationIdempotencyService:
     async def execute(
             self,
             *,
-            key: OrderIdempotencyKey,
-            operation: Callable[[], Awaitable[dict[str, Any]]],
+            key: BaseIdempotencyKey,
+            **kwargs
     ) -> dict[str, Any]:
         cache_key = key.cache_key(self._cache_key_prefix)
 
@@ -115,8 +137,91 @@ class OrderCreationIdempotencyService:
             if cached:
                 return cached
 
-            response = await operation()
+            response = await self.operation(**kwargs)
             await self._cache.set(cache_key, response, self._cache_ttl_seconds)
             return response
         finally:
             await lock_manager.release()
+
+    async def operation(self, **kwargs) -> dict[str, Any]:
+        raise NotImplementedError
+
+
+class OrderCreationIdempotencyService(BaseIdempotencyService):
+
+    @classmethod
+    def create_service(
+            cls,
+            *,
+            redis: Redis,
+            key: OrderIdempotencyKey,
+            lock_timeout=LOCK_TIMEOUT_SECONDS,
+            blocking_timeout=LOCK_BLOCKING_TIMEOUT_SECONDS,
+            retry_delay=LOCK_RETRY_DELAY_SECONDS,
+    ) -> "OrderCreationIdempotencyService":
+        cache = RedisJSONCache(redis)
+
+        def lock_builder() -> RedisLockManager:
+            return RedisLockManager(
+                redis,
+                key=key.lock_key(),
+                lock_timeout_seconds=lock_timeout,
+                blocking_timeout_seconds=blocking_timeout,
+                retry_delay_seconds=retry_delay,
+            )
+
+        return OrderCreationIdempotencyService(
+            cache=cache,
+            lock_builder=lock_builder,
+            cache_ttl_seconds=ORDER_RESPONSE_CACHE_TTL_SECONDS,
+            cache_key_prefix=ORDER_RESPONSE_CACHE_PREFIX,
+        )
+
+    async def operation(self, **kwargs) -> dict[str, Any]:
+        db = kwargs['db']
+        try:
+            db = kwargs['db']
+            phone_number = kwargs['phone_number']
+            airlink_id = kwargs['airlink_id']
+            saleor_service = kwargs['saleor_service']
+
+            user = user_controller.get_or_create_with_phone(
+                db=db, phone_number=phone_number, commit=True
+            )
+            if not user.customer_profile:
+                customer_controller.create_from_user(db=db, user=user, commit=True)
+
+            airlink = airlink_controller.get(db, id=airlink_id)
+            order_service = CreateOrderByAirlinkService(
+                airlink=airlink,
+                saleor_service=saleor_service,
+                user=user,
+                customer_id=user.customer_profile.id,
+                customer_email=user.get_email_or_default,
+                saleor_channel_id=settings.LINK_SALEOR_CHANNEL_ID,
+            )
+            saleor_order_id = await order_service.create_order()
+            freedom_p2p_response = await order_service.create_freedom_p2p_order()
+            order_service.create_transaction(
+                db=db,
+                saleor_order_id=saleor_order_id,
+                freedom_p2p_order_id=freedom_p2p_response.get("refer", "")
+            )
+
+            response = CreateOrderByAirlinkAndPhoneNumberResponse(
+                code=status.HTTP_200_OK,
+                message="success",
+                order_id=saleor_order_id,
+            )
+        except Exception as err:
+            db.rollback()
+            print(err)
+            code = getattr(err, 'status_code', None) or status.HTTP_500_INTERNAL_SERVER_ERROR
+
+            response = CreateOrderByAirlinkAndPhoneNumberResponse(
+                code=code,
+                message="error",
+                order_id=None,
+            )
+
+        return response.model_dump()

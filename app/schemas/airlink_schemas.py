@@ -181,7 +181,7 @@ class AirlinkPatchRequestRequest(BaseModel):
     description: Optional[str] = None
     date_start: Optional[datetime] = None
     date_end: Optional[datetime] = None
-    planned_price: Optional[Decimal] = None
+    price: Optional[Decimal] = None
 
 
 class CreateOrderByAirlinkAndPhoneNumberPayload(BaseModel):

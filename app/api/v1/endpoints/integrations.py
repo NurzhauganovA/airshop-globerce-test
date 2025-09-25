@@ -1,14 +1,13 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Query, Request
 from redis.asyncio import Redis
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers import merchant_controller, transactions_controller
-from app.controllers.airlink_controller import airlink_controller
-from app.controllers.internal import user_controller, customer_controller
+from app.controllers.internal import user_controller
 from app.controllers.transactions_controller import get_card_request_by_id
 from app.core import security
 from app.core.config import settings
@@ -18,7 +17,6 @@ from app.models.internal_model import User, EmployeeProfile
 from app.schemas.airlink_schemas import (
     AirlinkResponseSchema,
     CreateOrderByAirlinkAndPhoneNumberPayload,
-    CreateOrderByAirlinkAndPhoneNumberResponse,
 )
 from app.schemas.integrations import MerchantOnboardRequest, MerchantOnboardResponse
 from app.schemas.loanrequest_schemas import (
@@ -26,12 +24,11 @@ from app.schemas.loanrequest_schemas import (
     MFOHookResponseSchema,
     LoanOfferCreateSchema,
 )
-from app.services.airlink.create_order import CreateOrderByAirlinkService
+from app.services.fpay.constants import FreedomP2PPaymentStatuses
+from app.services.fpay.freedom_p2p import SetPaymentStatusFreedomP2PService
 from app.services.order.idempotency_service import (
     OrderCreationIdempotencyService,
     OrderIdempotencyKey,
-    RedisJSONCache,
-    RedisLockManager,
 )
 from app.services.saleor import SaleorService
 
@@ -44,36 +41,6 @@ ss = SaleorService(
     saleor_api_url=settings.SALEOR_GRAPHQL_URL,
     saleor_api_token=settings.SALEOR_API_TOKEN,
 )
-
-ORDER_RESPONSE_CACHE_PREFIX = "order:create:response:"
-ORDER_RESPONSE_CACHE_TTL_SECONDS = 60
-LOCK_TIMEOUT_SECONDS = 60
-LOCK_BLOCKING_TIMEOUT_SECONDS = 2
-LOCK_RETRY_DELAY_SECONDS = 0.1
-
-
-def _build_order_idempotency_service(
-        *,
-        redis: Redis,
-        key: OrderIdempotencyKey,
-) -> OrderCreationIdempotencyService:
-    cache = RedisJSONCache(redis)
-
-    def lock_builder() -> RedisLockManager:
-        return RedisLockManager(
-            redis,
-            key=key.lock_key(),
-            lock_timeout_seconds=LOCK_TIMEOUT_SECONDS,
-            blocking_timeout_seconds=LOCK_BLOCKING_TIMEOUT_SECONDS,
-            retry_delay_seconds=LOCK_RETRY_DELAY_SECONDS,
-        )
-
-    return OrderCreationIdempotencyService(
-        cache=cache,
-        lock_builder=lock_builder,
-        cache_ttl_seconds=ORDER_RESPONSE_CACHE_TTL_SECONDS,
-        cache_key_prefix=ORDER_RESPONSE_CACHE_PREFIX,
-    )
 
 
 @router.post(
@@ -95,7 +62,7 @@ async def register_merchant(
     """
     validated = merchant_in.model_validate(merchant_in)
     # 1. Create the merchant.
-    
+
     new_merchant = await merchant_controller.create_merchant_async(
         db=db, merchant=merchant_in.to_db_model()
     )
@@ -309,51 +276,44 @@ async def create_order_by_airlink_and_phone_number(
         phone_number=payload.phone_number,
         internal_order_id=payload.airlink_id,
     )
-    service = _build_order_idempotency_service(redis=redis, key=key)
-
-    async def _execute_order() -> dict[str, Any]:
-        try:
-            user = user_controller.get_or_create_with_phone(
-                db=db, phone_number=payload.phone_number, commit=True
-            )
-            if not user.customer_profile:
-                customer_controller.create_from_user(db=db, user=user, commit=True)
-
-            airlink = airlink_controller.get(db, id=payload.airlink_id)
-            order_service = CreateOrderByAirlinkService(
-                airlink=airlink,
-                saleor_service=ss,
-                customer_id=user.customer_profile.id,
-                customer_email=user.get_email_or_default,
-                saleor_channel_id=settings.LINK_SALEOR_CHANNEL_ID,
-            )
-            saleor_order_id = await order_service.create_order()
-            order_service.create_transaction(db=db, saleor_order_id=saleor_order_id)
-
-            response = CreateOrderByAirlinkAndPhoneNumberResponse(
-                code=status.HTTP_200_OK,
-                message="success",
-                order_id=saleor_order_id,
-            )
-        except Exception as err:
-            db.rollback()
-            # logger.error(...)
-            code = (
-                err.status_code
-                if isinstance(err, HTTPException)
-                else status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-            response = CreateOrderByAirlinkAndPhoneNumberResponse(
-                code=code,
-                message="error",
-                order_id=None,
-            )
-
-        return response.model_dump()
-
+    service = OrderCreationIdempotencyService.create_service(redis=redis, key=key)
     result = await service.execute(
         key=key,
-        operation=_execute_order,
+        db=db,
+        saleor_service=ss,
+        phone_number=payload.phone_number,
+        airlink_id=payload.airlink_id,
     )
     return result
+
+
+@router.post(
+    "/remote-payment/{order_id}/update",
+    dependencies=[
+        Depends(security.get_current_technical_user_basic_auth)
+    ]
+)
+async def update_order_status(
+        order_id: str,
+        request: Request,
+        db: Session = Depends(get_db),
+):
+    request_body = await request.json()
+    status_code = request_body.get("status", {}).get("code", "")
+    receipt_number = request_body.get("payment", {}).get("receiptNumber", "")
+
+    if status_code in ["SUCCESS", "HOLD", ]:
+        payment_status = FreedomP2PPaymentStatuses.HOLD
+    elif status_code == ["CANCELLED"]:
+        payment_status = FreedomP2PPaymentStatuses.CANCELLED
+    else:
+        payment_status = None
+
+    if payment_status:
+        service = SetPaymentStatusFreedomP2PService(db=db, freedom_order_id=order_id)
+        service.process(status=payment_status, receipt_number=receipt_number)
+
+    return {
+        "code": status.HTTP_200_OK,
+        "status": "SUCCESS"
+    }

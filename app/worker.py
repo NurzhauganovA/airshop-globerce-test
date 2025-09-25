@@ -5,24 +5,30 @@ import shutil
 import tempfile
 from io import BytesIO
 
-from app.controllers.airlink_controller import AirlinkController
-from app.core.database import SessionLocal
-from app.models.internal_model import Airlink, AirlinkCheckoutItem
-from app.core.celery_app import celery_app
-from app.graphql.generated_client.client import SaleorClient
-from app.services.saleor import SaleorService
-from app.core.config import settings
 import requests
-from app.core.s3_client import s3_client
 from fastapi import UploadFile
+
+from app.controllers.airlink_controller import AirlinkController
 from app.controllers.transactions_controller import (
     get_transaction_by_id,
     create_card_payment_request,
     get_loan_request_by_mfo_uuid,
     get_loan_request_by_id,
     load_offer_controller,
+    transactions_controller,
 )
-
+from app.core.celery_app import celery_app
+from app.core.config import settings
+from app.core.database import SessionLocal
+from app.core.s3_client import s3_client
+from app.graphql.generated_client import TransactionCreateInput, MoneyInput
+from app.graphql.generated_client.client import SaleorClient
+from app.models.internal_model import Airlink, AirlinkCheckoutItem
+from app.schemas.freedom import FPayCardPaymentRequestDto
+from app.schemas.loanrequest_schemas import (
+    LoanOfferCreateSchema,
+)
+from app.services.fpay.freedom_p2p import UnholdPaymentFreedomP2PService
 from app.services.fpay.freedom_pay import FreedomPayService
 from app.services.mfo.freedom_mfo import (
     FreedomMfoService,
@@ -30,11 +36,7 @@ from app.services.mfo.freedom_mfo import (
     AdditionalInformationSchema,
     GoodsSchema,
 )
-from app.schemas.loanrequest_schemas import (
-    LoanOfferCreateSchema,
-)
-from app.schemas.freedom import FPayCardPaymentRequestDto
-from app.graphql.generated_client import TransactionCreateInput, MoneyInput
+from app.services.saleor import SaleorService
 
 mfo_service = FreedomMfoService(settings.FREEDOM_MFO_HOST)
 airlink_controller = AirlinkController(Airlink)
@@ -284,8 +286,8 @@ async def _process_quick_airlink(airlink_id: str):
     """
     db = SessionLocal()
     async with SaleorClient(
-        url=settings.SALEOR_GRAPHQL_URL,
-        headers={"Authorization": f"Bearer {settings.SALEOR_API_TOKEN}"},
+            url=settings.SALEOR_GRAPHQL_URL,
+            headers={"Authorization": f"Bearer {settings.SALEOR_API_TOKEN}"},
     ) as saleor_client:
         try:
             print(f"Processing quick airlink: {airlink_id}")
@@ -305,7 +307,7 @@ async def _process_quick_airlink(airlink_id: str):
                     file_extension = mimetypes.guess_extension(content_type) or ".jpg"
 
                     with tempfile.NamedTemporaryFile(
-                        delete=False, suffix=file_extension
+                            delete=False, suffix=file_extension
                     ) as tmp_file:
                         shutil.copyfileobj(r.raw, tmp_file)
                         temp_file_path = tmp_file.name
@@ -361,7 +363,7 @@ async def _process_quick_airlink(airlink_id: str):
             airlink.ai_response = image_data
 
             if image_data.get("risk_value") != "Low" or not image_data.get(
-                "product_name"
+                    "product_name"
             ):
                 airlink.moderation_status = "REJECTED"
                 db.add(airlink)
@@ -383,9 +385,9 @@ async def _process_quick_airlink(airlink_id: str):
                 name=image_data.get("product_name"),
             )
             if (
-                not product_response.product_create
-                or not product_response.product_create.product
-                or product_response.product_create.errors
+                    not product_response.product_create
+                    or not product_response.product_create.product
+                    or product_response.product_create.errors
             ):
                 errors = (
                     product_response.product_create.errors
@@ -404,9 +406,9 @@ async def _process_quick_airlink(airlink_id: str):
                 name=image_data.get("product_name_rus"),
             )
             if (
-                not variant_response.product_variant_create
-                or not variant_response.product_variant_create.product_variant
-                or variant_response.product_variant_create.errors
+                    not variant_response.product_variant_create
+                    or not variant_response.product_variant_create.product_variant
+                    or variant_response.product_variant_create.errors
             ):
                 errors = (
                     variant_response.product_variant_create.errors
@@ -489,3 +491,26 @@ def get_card_payment_status(transaction_id: str):
 @celery_app.task(acks_late=True)
 def complete_transaction(transaction_id: str):
     asyncio.run(_complete_transaction(transaction_id=transaction_id))
+
+
+@celery_app.task(acks_late=True)
+def cancel_expired_freedom_p2p_orders():
+    db = SessionLocal()
+    try:
+        transactions_controller.cancel_expired_freedom_p2p_orders(db)
+    finally:
+        db.close()
+
+
+@celery_app.task(acks_late=True)
+def unhold_freedom_order_payment(freedom_order_reference_id: str) -> None:
+    try:
+        service = UnholdPaymentFreedomP2PService(freedom_order_reference_id=freedom_order_reference_id)
+        result = asyncio.run(service.process())
+
+        if not service.is_payment_unhold_success(result):
+            raise Exception(f"Unhold failed for {freedom_order_reference_id}: {result}")
+
+    except Exception as exc:
+        # logger.error("Unexpected error while unholding %s", freedom_order_reference_id)
+        print(f"Unexpected error while unholding {exc}")

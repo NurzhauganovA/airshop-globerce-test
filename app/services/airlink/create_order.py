@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-from typing import Optional, Set
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -11,7 +10,8 @@ from app.graphql.generated_client import (
     CreateCheckoutFromAirlinkCheckoutCreate,
     CreateOrderFromSaleorCheckout,
 )
-from app.models.internal_model import Airlink, AirlinkCheckoutItem
+from app.models.internal_model import Airlink, AirlinkCheckoutItem, User
+from app.services.fpay.freedom_p2p import InitializePaymentFreedomP2PService
 from app.services.saleor import SaleorService
 
 
@@ -21,6 +21,7 @@ class CreateOrderByAirlinkService:
             self,
             airlink: Airlink,
             saleor_service: SaleorService,
+            user: User,
             customer_id: str,
             customer_email: str,
             payment_method_id: str | None = None,
@@ -28,6 +29,7 @@ class CreateOrderByAirlinkService:
     ) -> None:
         self.airlink = airlink
         self.saleor_service = saleor_service
+        self.user = user
         self.payment_method_id = payment_method_id
         self.saleor_channel_id = saleor_channel_id
         self.customer_id = customer_id
@@ -36,7 +38,7 @@ class CreateOrderByAirlinkService:
         self._is_validated = False
 
     @property
-    def valid_payment_method_ids(self) -> Set[str]:
+    def valid_payment_method_ids(self) -> set[str]:
         return {
             mpm.id for mpm in self.airlink.merchant.merchant_payment_methods if mpm.active
         }
@@ -164,17 +166,40 @@ class CreateOrderByAirlinkService:
         self._raise_order_error(saleor_order_response)
         return saleor_order_response
 
-    def create_transaction(self, db: Session, saleor_order_id: str) -> None:
+    async def create_freedom_p2p_order(self) -> dict:
+        freedom_p2p_pay_service = InitializePaymentFreedomP2PService(
+            airlinks=[self.airlink],
+            user=self.user,
+            merchant=self.airlink.merchant,
+        )
+        try:
+            response = await freedom_p2p_pay_service.process()
+        except Exception as exc:
+            # logger.error()
+            print(f"create_freedom_p2p_order {exc}")
+            response = {}
+
+        return response
+
+    def create_transaction(self, db: Session, saleor_order_id: str, freedom_p2p_order_id: str | None = None) -> None:
         transaction = transactions_controller.create_transaction(
             db=db,
             saleor_order_id=saleor_order_id,
             amount=self.airlink.planned_price,
         )
-        transactions_controller.set_transaction_payment_type(
-            db=db,
-            transaction=transaction,
-            payment_method_id=self.payment_method_id,
-        )
+
+        if freedom_p2p_order_id:
+            transaction = transactions_controller.transactions_controller.set_freedom_p2p_order_id(
+                db=db,
+                transaction=transaction
+            )
+
+        if self.payment_method_id:
+            transactions_controller.set_transaction_payment_type(
+                db=db,
+                transaction=transaction,
+                payment_method_id=self.payment_method_id,
+            )
 
     async def create_order(self) -> str:
         if not self._is_validated:
@@ -206,7 +231,7 @@ class CreateOrderByAirlinkService:
         return saleor_order_id
 
     @staticmethod
-    def _as_aware_utc(value: Optional[datetime]) -> Optional[datetime]:
+    def _as_aware_utc(value: datetime | None) -> datetime | None:
         if value is None:
             return None
         if value.tzinfo is None:

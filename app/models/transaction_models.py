@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -15,6 +16,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+
 
 # --- Transaction Models ---
 
@@ -26,12 +28,18 @@ class Transaction(Base):
     """
 
     __tablename__ = "transactions"
+    __table_args__ = (
+        Index("ix_transactions_status_created_at", "status", "created_at"),
+        Index("ix_transactions_freedom_order_reference_id", "freedom_order_reference_id"),
+    )
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     status = Column(
         String, nullable=False, default="NEW"
     )  # e.g., 'NEW', 'IN_PROGRESS', 'FINISHED', 'REJECTED'
     saleor_order_id = Column(String, nullable=False)  # Links to the Saleor order
+    freedom_order_reference_id = Column(String, nullable=True)
+    freedom_receipt_number = Column(String, nullable=True)
     synced = Column(Boolean, default=False)
     payment_method_id = Column(
         String, ForeignKey("merchant_payment_methods.id"), nullable=True

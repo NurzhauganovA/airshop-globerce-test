@@ -169,6 +169,13 @@ class Merchant(Base):
         cascade="all, delete-orphan",
     )
 
+    @property
+    def primary_address(self):
+        return next(
+            (addr for addr in self.addresses if addr.type == "PRIMARY"),
+            "",
+        )
+
 
 class Customer(Base):
     """
@@ -413,6 +420,10 @@ class Airlink(Base):
     images = relationship("AirlinkImage", back_populates="airlink")
     checkout_items = relationship("AirlinkCheckoutItem", back_populates="airlink")
 
+    @property
+    def first_image_url(self) -> str:
+        image = next(iter(self.images), "")
+        return image and image.url
 
 class AirlinkImage(Base):
     """

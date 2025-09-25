@@ -17,9 +17,14 @@ from app.models.internal_model import (
     Airlink,
     EmployeeProfile, User,
 )
-from app.schemas.integrations import MerchantAddressCreate
+from app.models.transaction_models import Transaction
+from app.schemas.customer_schemas import CustomerBaseSchema
+from app.schemas.integrations import MerchantAddressCreate, MerchantOnboardRequest, MerchantOnboardRequestEmployee, \
+    MerchantSchema
 from app.models.category_models import MerchantCategory
 from app.models.warehouse_models import MerchantShippingZone, MerchantWarehouse
+from app.schemas.merchant_site_shemas import MerchantSiteSchema
+from app.schemas.order_schemas import SaleorOrderSchema
 
 
 def get_by_bin(db: Session, *, bin: str) -> Merchant | None:
@@ -428,3 +433,82 @@ async def create_employee_for_merchant_async(
     await db.flush()
 
     return db_employee
+
+
+def get_orders_with_transactions(
+    saleor_order_ids: List[str],
+    db: Session,
+) -> List[str]:
+    """
+    Получает список заказов Saleor, у которых есть транзакции
+    """
+    if not saleor_order_ids:
+        return []
+
+    transactions = (
+        db.query(Transaction).filter(Transaction.saleor_order_id.in_(saleor_order_ids))
+        .with_entities(Transaction.saleor_order_id)
+        .distinct()
+        .all()
+    )
+    return [t.saleor_order_id for t in transactions]
+
+
+def list_orders_for_merchant_with_transactions(
+    db: Session,
+    merchant_id: str,
+    saleor_orders: List
+) -> List[SaleorOrderSchema]:
+    """
+    Фильтрует заказы Saleor и возвращает только те, у которых есть транзакции
+    """
+    if not saleor_orders:
+        return []
+
+    merchant = get_merchant_by_id(db, merchant_id=merchant_id)
+    if not merchant:
+        return []
+
+    saleor_order_ids = [order.id for order in saleor_orders]
+
+    orders_with_transactions = get_orders_with_transactions(saleor_order_ids, db)
+    if not orders_with_transactions:
+        return []
+
+    filtered_orders = [
+        order for order in saleor_orders
+        if order.id in orders_with_transactions
+    ]
+
+    return filtered_orders
+
+
+def enrich_orders_with_customers(
+    db: Session,
+    merchant_id: str,
+    saleor_orders: list
+) -> list[SaleorOrderSchema]:
+    """Добавляет информацию о покупателях в заказы"""
+    merchant = get_merchant_by_id(db, merchant_id=merchant_id)
+    merchant_schema = MerchantOnboardRequest.from_db_model(merchant)
+
+    result = []
+    for order in saleor_orders:
+        customer_id = next(
+            (m.value for m in order.metadata if m.key == "customer_id"), None
+        )
+        customer_schema = None
+        if customer_id:
+            customer = db.query(Customer).filter(Customer.id == customer_id).first()
+            if customer:
+                customer_schema = CustomerBaseSchema.from_db_model(customer)
+
+        result.append(
+            SaleorOrderSchema(
+                order=order,
+                customer=customer_schema,
+                merchant=merchant_schema
+            )
+        )
+
+    return result

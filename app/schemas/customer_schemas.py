@@ -3,6 +3,8 @@
 from pydantic import BaseModel
 from typing import List, Optional
 
+from app.models.internal_model import Customer
+
 
 # A simple Pydantic model for a product variant
 class ProductVariantSchema(BaseModel):
@@ -50,3 +52,16 @@ class CustomerBaseSchema(BaseModel):
     last_name: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
+
+    @staticmethod
+    def from_db_model(customer: Customer) -> "CustomerBaseSchema":
+        """
+        Create a CustomerBaseSchema from a Customer ORM model.
+        """
+        return CustomerBaseSchema(
+            id=customer.id,
+            first_name=customer.first_name,
+            last_name=customer.surname,
+            email=customer.user.email if customer.user else None,
+            phone_number=customer.user.phone_number if customer.user else None,
+        )

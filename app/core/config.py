@@ -146,6 +146,12 @@ class Settings(BaseSettings):
 
     AIRLINK_PROLONG_DAYS: int = Field(default=14, env="AIRLINK_PROLONG_DAYS")
 
+    FREEDOM_P2P_INIT_PAYMENT_TOKEN: str = Field(..., env="FREEDOM_P2P_INIT_PAYMENT_TOKEN")
+    FREEDOM_P2P_CONFIRM_PAYMENT_TOKEN: str = Field(..., env="FREEDOM_P2P_CONFIRM_PAYMENT_TOKEN")
+    FREEDOM_P2P_BASE_URL: str = Field(..., env="FREEDOM_P2P_BASE_URL")
+    FREEDOM_P2P_INIT_PAYMENT_URL: str = Field(..., env="FREEDOM_P2P_INIT_PAYMENT_URL")
+    FREEDOM_P2P_CONFIRM_PAYMENT_URL: str = Field(..., env="FREEDOM_P2P_CONFIRM_PAYMENT_URL")
+
     class Config:
         """
         Configuration for Pydantic's BaseSettings.

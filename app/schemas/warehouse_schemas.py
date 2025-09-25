@@ -21,7 +21,7 @@ class MerchantWarehouseSchema(BaseModel):
 
 
 
-class PaginatedMerchantWarehousesResponse(BaseModel):
+class PaginatedMerchantWarehousesResponse(PaginatedResponse):
     total_count: int
     has_next_page: bool
     has_previous_page: bool

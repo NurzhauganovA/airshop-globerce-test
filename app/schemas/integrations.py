@@ -2,11 +2,24 @@ from __future__ import annotations
 
 from typing import Optional
 
-
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from pydantic.types import datetime
-from app.models.internal_model import Merchant
-from datetime import timezone
+from app.models.internal_model import Merchant, EmployeeProfile
+
+
+class MerchantSchema(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    legal_name: str
+    bin: str
+    iban: str
+    phone: str
+    company_id: str
+    company_type: str
+    registration_date: str
+    created_at: str
+    updated_at: str
 
 
 class MerchantAddressCreate(BaseModel):
@@ -26,6 +39,20 @@ class MerchantOnboardRequestEmployee(BaseModel):
     profile_id: str = Field(..., min_length=2, max_length=50)
     external_id: str = Field(..., min_length=2, max_length=50)
 
+    @staticmethod
+    def from_db_model(employee_profile: Optional[EmployeeProfile]) -> Optional["MerchantOnboardRequestEmployee"]:
+        """Create a MerchantOnboardRequestEmployee from an EmployeeProfile ORM model."""
+        if not employee_profile:
+            return None
+
+        return MerchantOnboardRequestEmployee(
+            first_name=employee_profile.first_name,
+            middle_name=employee_profile.middle_name,
+            last_name=employee_profile.last_name,
+            profile_id=employee_profile.profile_id,
+            external_id=employee_profile.external_id,
+        )
+
 class MerchantOnboardResponse(BaseModel):
     status: str
     merchant_id: str
@@ -40,6 +67,24 @@ class MerchantOnboardRequest(BaseModel):
     company_type: str = Field(..., pattern="^(LLC|IP)$")
     registration_date: str = Field(..., min_length=5, max_length=40)
     employee: MerchantOnboardRequestEmployee
+
+    @staticmethod
+    def from_db_model(merchant: Merchant) -> "MerchantOnboardRequest":
+        """Create a MerchantOnboardRequest from a Merchant ORM model."""
+        employee_profile = None
+        if merchant.employees and merchant.employees[0].employee_profile:
+            employee_profile = merchant.employees[0].employee_profile
+
+        return MerchantOnboardRequest(
+            name=merchant.legal_name,
+            bin=merchant.bin,
+            bank_account=merchant.iban,
+            phone=merchant.phone,
+            company_id=merchant.company_id,
+            company_type=merchant.company_type,
+            registration_date=str(merchant.registration_date),
+            employee=MerchantOnboardRequestEmployee.from_db_model(employee_profile),
+        )
 
     def to_db_model(self) -> Merchant:
         """returns db model to saving"""
